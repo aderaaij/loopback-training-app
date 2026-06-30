@@ -33,6 +33,13 @@ actor HealthMetricsSyncer {
         // alongside other metrics; consumed by WorkoutExtractor, not this syncer.
         HKQuantityType(.workoutEffortScore),
         HKQuantityType(.estimatedWorkoutEffortScore),
+        // Workout detail — needed by WorkoutExtractor for the rich detail view
+        // (GPS route + per-km splits) and in-workout heart rate. Requested here
+        // so route access is granted via the app's primary auth path, not only
+        // through the optional Open Wearables tiers.
+        HKObjectType.workoutType(),
+        HKSeriesType.workoutRoute(),
+        HKQuantityType(.heartRate),
     ]
 
     init(apiClient: WorkoutAPIClient) {
