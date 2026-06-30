@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import MapKit
 
 // MARK: - Stat tile
 
@@ -159,81 +160,98 @@ struct LBEffortGauge: View {
     }
 }
 
-// MARK: - Route trace
+// MARK: - Route map (MapKit, forced dark)
 
 struct LBRouteMap: View {
     let route: [RoutePoint]
 
     var body: some View {
-        GeometryReader { geo in
-            let pts = mapped(in: geo.size)
-            ZStack {
-                gridPath(in: geo.size)
-                    .stroke(LB.textPrimary.opacity(0.045), lineWidth: 1)
-                if pts.count > 1 {
-                    routePath(pts)
-                        .stroke(LB.accent.opacity(0.30),
-                                style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
-                    routePath(pts)
-                        .stroke(LB.accent,
-                                style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
-                    if let s = pts.first {
-                        Circle().fill(LB.green)
-                            .frame(width: 11, height: 11)
-                            .overlay(Circle().strokeBorder(LB.surfaceSunken, lineWidth: 2))
-                            .position(s)
-                    }
-                    if let e = pts.last {
-                        Circle().fill(LB.accent)
-                            .frame(width: 11, height: 11)
-                            .overlay(Circle().strokeBorder(LB.surfaceSunken, lineWidth: 2))
-                            .position(e)
-                    }
-                }
-            }
-        }
-        .frame(height: 150)
+        RouteMapView(coords: route.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        })
+        .frame(height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+        )
+        .allowsHitTesting(false)
+    }
+}
+
+/// Thin MKMapView wrapper: SwiftUI `Map` won't honour a dark colour-scheme
+/// override for its tiles, so we force `overrideUserInterfaceStyle = .dark`
+/// here and draw the route as a polyline with start/end markers.
+private struct RouteMapView: UIViewRepresentable {
+    let coords: [CLLocationCoordinate2D]
+
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView()
+        map.overrideUserInterfaceStyle = .dark
+        map.isUserInteractionEnabled = false
+        map.showsCompass = false
+        map.showsScale = false
+        let config = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
+        config.pointOfInterestFilter = .excludingAll
+        map.preferredConfiguration = config
+        map.delegate = context.coordinator
+        return map
     }
 
-    private func gridPath(in size: CGSize) -> Path {
-        var p = Path()
-        let rows = 4, cols = 4
-        for r in 1..<rows {
-            let y = size.height * CGFloat(r) / CGFloat(rows)
-            p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
-        }
-        for c in 1..<cols {
-            let x = size.width * CGFloat(c) / CGFloat(cols)
-            p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height))
-        }
-        return p
+    func updateUIView(_ map: MKMapView, context: Context) {
+        map.removeOverlays(map.overlays)
+        map.removeAnnotations(map.annotations)
+        guard coords.count > 1 else { return }
+
+        let line = MKPolyline(coordinates: coords, count: coords.count)
+        map.addOverlay(line)
+
+        let start = RouteEndpoint(coordinate: coords.first!, isStart: true)
+        let end = RouteEndpoint(coordinate: coords.last!, isStart: false)
+        map.addAnnotations([start, end])
+
+        map.setVisibleMapRect(
+            line.boundingMapRect,
+            edgePadding: UIEdgeInsets(top: 26, left: 26, bottom: 26, right: 26),
+            animated: false
+        )
     }
 
-    private func routePath(_ pts: [CGPoint]) -> Path {
-        var p = Path()
-        p.addLines(pts)
-        return p
-    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
-    private func mapped(in size: CGSize) -> [CGPoint] {
-        guard route.count > 1 else { return [] }
-        let lats = route.map(\.latitude), lons = route.map(\.longitude)
-        guard let minLat = lats.min(), let maxLat = lats.max(),
-              let minLon = lons.min(), let maxLon = lons.max() else { return [] }
-        let midLat = (minLat + maxLat) / 2
-        let cosMid = cos(midLat * .pi / 180)
-        let pad: CGFloat = 14
-        let w = size.width - 2 * pad, h = size.height - 2 * pad
-        let latRange = max(maxLat - minLat, 1e-7)
-        let lonRange = max((maxLon - minLon) * cosMid, 1e-7)
-        let scale = min(w / CGFloat(latRange == 0 ? 1 : lonRange), h / CGFloat(latRange))
-        let drawW = CGFloat(lonRange) * scale, drawH = CGFloat(latRange) * scale
-        let ox = pad + (w - drawW) / 2, oy = pad + (h - drawH) / 2
-        return route.map { pt in
-            let x = ox + CGFloat((pt.longitude - minLon) * cosMid) * scale
-            let y = oy + drawH - CGFloat(pt.latitude - minLat) * scale
-            return CGPoint(x: x, y: y)
+    final class Coordinator: NSObject, MKMapViewDelegate {
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
+            let r = MKPolylineRenderer(polyline: line)
+            r.strokeColor = LB.uiAccent
+            r.lineWidth = 3.5
+            r.lineCap = .round
+            r.lineJoin = .round
+            return r
         }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            guard let endpoint = annotation as? RouteEndpoint else { return nil }
+            let v = MKAnnotationView(annotation: annotation, reuseIdentifier: "lbEndpoint")
+            let size: CGFloat = 12
+            let dot = UIView(frame: CGRect(x: 0, y: 0, width: size, height: size))
+            dot.backgroundColor = endpoint.isStart ? UIColor(LB.green) : LB.uiAccent
+            dot.layer.cornerRadius = size / 2
+            dot.layer.borderWidth = 2
+            dot.layer.borderColor = UIColor(LB.bg).cgColor
+            dot.isUserInteractionEnabled = false
+            v.frame = dot.frame
+            v.addSubview(dot)
+            return v
+        }
+    }
+}
+
+private final class RouteEndpoint: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let isStart: Bool
+    init(coordinate: CLLocationCoordinate2D, isStart: Bool) {
+        self.coordinate = coordinate
+        self.isStart = isStart
     }
 }
 
