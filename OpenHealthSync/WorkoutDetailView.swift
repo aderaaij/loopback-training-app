@@ -291,25 +291,7 @@ struct WorkoutDetailView: View {
 
     @ViewBuilder
     private func richContent(_ d: DetailedWorkout) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            LazyVGrid(columns: grid, spacing: 12) {
-                if let dist = d.totalDistance, dist > 0 {
-                    LBStatTile(label: "Distance", value: String(format: "%.2f", dist / 1000), unit: "km")
-                }
-                LBStatTile(label: "Duration", value: formatDuration(d.duration))
-                if let dist = d.totalDistance, dist > 0 {
-                    LBStatTile(label: "Avg pace",
-                               value: paceValue(duration: d.duration, distance: dist),
-                               unit: "/km", accent: true)
-                }
-                if let hr = avgHR(d) {
-                    LBStatTile(label: "Avg HR", value: "\(hr)", unit: "bpm")
-                }
-            }
-            if let effort = d.effortScore ?? d.estimatedEffortScore {
-                LBEffortGauge(score: effort, estimated: d.effortScore == nil)
-            }
-        }
+        statSection(d)
 
         if let route = d.route, route.count > 1 {
             LBDetailSection(title: "Route", trailing: routeTrailing(d), fill: LB.surfaceSunken) {
@@ -326,6 +308,70 @@ struct WorkoutDetailView: View {
         if let splits = d.splits, !splits.isEmpty {
             LBDetailSection(title: "1 km splits", trailing: splitsTrailing(splits)) {
                 LBSplitsList(splits: splits)
+            }
+        }
+    }
+
+    // MARK: Stat grid + effort gauge (equal-height row)
+
+    private struct StatSpec: Identifiable {
+        let id = UUID()
+        let label: String
+        let value: String
+        var unit: String? = nil
+        var accent: Bool = false
+    }
+
+    private func statSpecs(_ d: DetailedWorkout) -> [StatSpec] {
+        var specs: [StatSpec] = []
+        if let dist = d.totalDistance, dist > 0 {
+            specs.append(StatSpec(label: "Distance", value: String(format: "%.2f", dist / 1000), unit: "km"))
+        }
+        specs.append(StatSpec(label: "Duration", value: formatDuration(d.duration)))
+        if let dist = d.totalDistance, dist > 0 {
+            specs.append(StatSpec(label: "Avg pace",
+                                  value: paceValue(duration: d.duration, distance: dist),
+                                  unit: "/km", accent: true))
+        }
+        if let hr = avgHR(d) {
+            specs.append(StatSpec(label: "Avg HR", value: "\(hr)", unit: "bpm"))
+        }
+        return specs
+    }
+
+    @ViewBuilder
+    private func statSection(_ d: DetailedWorkout) -> some View {
+        let specs = statSpecs(d)
+        if let effort = d.effortScore ?? d.estimatedEffortScore {
+            // Stat rows stretch to match the (taller) gauge so the bottoms align.
+            HStack(alignment: .top, spacing: 12) {
+                statColumn(specs, stretch: true)
+                LBEffortGauge(score: effort,
+                              estimated: d.effortScore == nil,
+                              zone: effortZone(d))
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            statColumn(specs, stretch: false)
+        }
+    }
+
+    private func statColumn(_ specs: [StatSpec], stretch: Bool) -> some View {
+        let rows = stride(from: 0, to: specs.count, by: 2).map {
+            Array(specs[$0..<min($0 + 2, specs.count)])
+        }
+        return VStack(spacing: 12) {
+            ForEach(rows.indices, id: \.self) { ri in
+                HStack(spacing: 12) {
+                    ForEach(rows[ri]) { spec in
+                        LBStatTile(label: spec.label, value: spec.value,
+                                   unit: spec.unit, accent: spec.accent, stretch: stretch)
+                    }
+                    if rows[ri].count == 1 {
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(maxHeight: stretch ? .infinity : nil)
             }
         }
     }
@@ -360,6 +406,32 @@ struct WorkoutDetailView: View {
         let vals = hr.map(\.value).filter { $0 > 0 }
         guard !vals.isEmpty else { return nil }
         return Int((vals.reduce(0, +) / Double(vals.count)).rounded())
+    }
+
+    /// Average heart-rate zone, estimated from avg HR vs an assumed max HR
+    /// (we don't have the athlete's true max, so this is approximate).
+    private func effortZone(_ d: DetailedWorkout) -> LBEffortZone? {
+        guard let hr = d.heartRate else { return nil }
+        let vals = hr.map(\.value).filter { $0 > 0 }
+        guard !vals.isEmpty else { return nil }
+        let avg = vals.reduce(0, +) / Double(vals.count)
+        let maxHR = max(vals.max() ?? 0, 190)
+        let pct = avg / maxHR
+        let zone: Int
+        switch pct {
+        case ..<0.60: zone = 1
+        case ..<0.70: zone = 2
+        case ..<0.80: zone = 3
+        case ..<0.90: zone = 4
+        default:      zone = 5
+        }
+        let names   = ["", "Recovery", "Easy", "Moderate", "Threshold", "Max"]
+        let colors  = [LB.zone1, LB.zone1, LB.zone2, LB.zone3, LB.zone4, LB.zone5]
+        return LBEffortZone(
+            type: zone <= 3 ? "Aerobic" : "Anaerobic",
+            detail: "Zone \(zone) · \(names[zone])",
+            color: colors[zone]
+        )
     }
 
     private func routeTrailing(_ d: DetailedWorkout) -> String {

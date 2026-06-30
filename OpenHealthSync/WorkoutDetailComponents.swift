@@ -15,13 +15,18 @@ struct LBStatTile: View {
     let value: String
     var unit: String? = nil
     var accent: Bool = false
+    /// When true the card fills the available height (used to align a stat
+    /// grid with a taller neighbour such as the effort gauge).
+    var stretch: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
                 .font(.lbBody(11))
-                .tracking(0.3)
+                .tracking(0.2)
                 .foregroundStyle(LB.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(value)
                     .font(.lbDisplay(24, .semibold))
@@ -35,8 +40,11 @@ struct LBStatTile: View {
             .lineLimit(1)
             .minimumScaleFactor(0.45)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .frame(maxWidth: .infinity,
+               maxHeight: stretch ? .infinity : nil,
+               alignment: stretch ? .topLeading : .leading)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 14)
         .lbCard(radius: 18)
     }
 }
@@ -72,10 +80,19 @@ struct LBDetailSection<Content: View>: View {
 
 // MARK: - Effort gauge
 
+/// Average heart-rate zone summary shown under the effort score.
+struct LBEffortZone {
+    let type: String     // "Aerobic" / "Anaerobic"
+    let detail: String   // "Zone 2 · Easy"
+    let color: Color
+}
+
 struct LBEffortGauge: View {
     /// RPE 1–10.
     let score: Double
     var estimated: Bool = false
+    /// Average HR-zone summary, when heart-rate data is available.
+    var zone: LBEffortZone? = nil
 
     private var fraction: CGFloat { CGFloat(min(max(score / 10, 0), 1)) }
 
@@ -89,6 +106,8 @@ struct LBEffortGauge: View {
         }
     }
 
+    private var arcColor: Color { zone?.color ?? descriptor.color }
+
     private var scoreText: String {
         score == score.rounded() ? String(Int(score)) : String(format: "%.1f", score)
     }
@@ -100,27 +119,38 @@ struct LBEffortGauge: View {
                     .stroke(LB.trackEmpty, lineWidth: 9)
                 Circle()
                     .trim(from: 0, to: fraction)
-                    .stroke(descriptor.color, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .stroke(arcColor, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 2) {
                     Text(scoreText)
                         .font(.lbDisplay(30, .bold))
                         .foregroundStyle(LB.textPrimary)
-                    Text("EFFORT")
+                    Text(estimated ? "EST · EFFORT" : "EFFORT")
                         .font(.lbBody(9))
-                        .tracking(0.8)
+                        .tracking(0.6)
                         .foregroundStyle(LB.textTertiary)
                 }
             }
             .frame(width: 104, height: 104)
 
             VStack(spacing: 1) {
-                Text(descriptor.label)
-                    .font(.lbBody(12, .semibold))
-                    .foregroundStyle(descriptor.color)
-                Text(estimated ? "Estimated · RPE" : "Rated · RPE")
-                    .font(.lbBody(11))
-                    .foregroundStyle(LB.textTertiary)
+                if let zone {
+                    Text(zone.type)
+                        .font(.lbBody(12, .semibold))
+                        .foregroundStyle(zone.color)
+                    Text(zone.detail)
+                        .font(.lbBody(11))
+                        .foregroundStyle(LB.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                } else {
+                    Text(descriptor.label)
+                        .font(.lbBody(12, .semibold))
+                        .foregroundStyle(descriptor.color)
+                    Text(estimated ? "Estimated · RPE" : "Rated · RPE")
+                        .font(.lbBody(11))
+                        .foregroundStyle(LB.textTertiary)
+                }
             }
         }
         .frame(width: 128)
