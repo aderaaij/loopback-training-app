@@ -186,7 +186,9 @@ actor WorkoutAPIClient {
 
     // MARK: - Training Plans
 
-    func fetchActivePlan() async throws -> TrainingPlan? {
+    /// Fetches every active plan. A running plan and a strength cycle can be
+    /// active simultaneously, so callers split the result by activity type.
+    func fetchActivePlans() async throws -> [TrainingPlan] {
         let url = baseURL.appendingPathComponent("api/plans")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "status", value: "active")]
@@ -205,8 +207,8 @@ actor WorkoutAPIClient {
             throw WorkoutAPIError.serverError(httpResponse.statusCode)
         }
 
-        let plans = try JSONDecoder().decode([TrainingPlan].self, from: data)
-        return plans.first
+        let wrapped = try JSONDecoder().decode([FailableDecodable<TrainingPlan>].self, from: data)
+        return wrapped.compactMap(\.value)
     }
 
     /// Fetches every plan (no status filter), newest first. Used by the plans
@@ -232,6 +234,58 @@ actor WorkoutAPIClient {
         // metadata shouldn't blank the entire list.
         let wrapped = try JSONDecoder().decode([FailableDecodable<TrainingPlan>].self, from: data)
         return wrapped.compactMap(\.value)
+    }
+
+    // MARK: - Unified Schedule Calendar (runs + strength)
+
+    /// Fetches the merged run + strength agenda, date-sorted with conflict
+    /// flags. Dates are "yyyy-MM-dd"; the server defaults to today..+28d
+    /// when a bound is omitted.
+    func fetchScheduleCalendar(from: String? = nil, to: String? = nil) async throws -> CalendarResponse {
+        let url = baseURL.appendingPathComponent("api/schedule/calendar")
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        var queryItems: [URLQueryItem] = []
+        if let from { queryItems.append(URLQueryItem(name: "from", value: from)) }
+        if let to { queryItems.append(URLQueryItem(name: "to", value: to)) }
+        if !queryItems.isEmpty { components.queryItems = queryItems }
+
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WorkoutAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw WorkoutAPIError.serverError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(CalendarResponse.self, from: data)
+    }
+
+    /// Fetches a plan's cadence expanded to concrete dated sessions, with
+    /// run-conflict warnings. Used by the strength plan detail screen.
+    func fetchPlanSchedule(planId: UUID) async throws -> PlanScheduleResponse {
+        let url = baseURL.appendingPathComponent("api/plans/\(planId.uuidString)/schedule")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WorkoutAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw WorkoutAPIError.serverError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(PlanScheduleResponse.self, from: data)
     }
 
     func fetchPlanWorkouts(planId: UUID) async throws -> [PlanWorkout] {

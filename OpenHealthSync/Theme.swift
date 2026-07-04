@@ -42,6 +42,7 @@ enum LB {
     static let blue   = Color(hex: 0x6E91FF)   // upcoming / synced
     static let amber  = Color(hex: 0xE8A33D)   // missed / warning
     static let red    = Color(hex: 0xDC4A3B)   // hard effort
+    static let violet = Color(hex: 0xA78BFA)   // strength / Hevy sessions
 
     // MARK: Heart-rate zones
     static let zone1 = Color(hex: 0x5E7C8E)

@@ -83,6 +83,25 @@ nonisolated struct TrainingPlan: Codable, Sendable, Identifiable {
         return metadata?.phases?.first { $0.weeks.contains(week) }
     }
 
+    /// Strength cycles are display-only plan markers (Hevy routines per
+    /// weekday) — never sent to WorkoutKit / the watch.
+    var isStrength: Bool {
+        activityType.lowercased() == "strength"
+    }
+
+    /// Whole days from today until the plan's end date (0 = ends today,
+    /// negative = already ended, nil = open-ended). Drives the cycle-horizon
+    /// chip that cues planning the next cycle.
+    var daysRemaining: Int? {
+        guard let end else { return nil }
+        let calendar = Calendar.current
+        return calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: Date()),
+            to: calendar.startOfDay(for: end)
+        ).day
+    }
+
     /// Bucket the plan into upcoming / current / archived.
     ///
     /// An explicit backend status wins: `active` is the current plan (even if it
@@ -118,9 +137,12 @@ struct TrainingPlanMetadata: Codable, Sendable {
     let phases: [PlanPhase]?
     let background: String?
     let athleteContext: AthleteContext?
+    /// Weekly cadence for strength cycles. Nested camelCase even though the
+    /// surrounding plan read is snake_case — the server stores it verbatim.
+    let schedule: PlanSchedule?
 
     enum CodingKeys: String, CodingKey {
-        case goals, guardrails, phases, background
+        case goals, guardrails, phases, background, schedule
         case athleteContext = "athlete_context"
     }
 }

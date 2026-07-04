@@ -101,11 +101,14 @@ struct PlanOverviewCard: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 5) {
-                HStack(spacing: 0) {
-                    Text("\(completedCount)").foregroundStyle(LB.accent)
-                    Text("/\(totalCount)").foregroundStyle(LB.textMuted)
+                // Strength cycles have no queue workouts — a "0/0" reads broken.
+                if totalCount > 0 {
+                    HStack(spacing: 0) {
+                        Text("\(completedCount)").foregroundStyle(LB.accent)
+                        Text("/\(totalCount)").foregroundStyle(LB.textMuted)
+                    }
+                    .font(.lbMono(26, .semibold))
                 }
-                .font(.lbMono(26, .semibold))
                 if let currentWeek = plan.currentWeek, let totalWeeks = plan.totalWeeks {
                     Text("WEEK \(currentWeek + 1)/\(totalWeeks)")
                         .font(.lbMono(11))

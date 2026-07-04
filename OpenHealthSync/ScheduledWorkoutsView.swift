@@ -78,6 +78,13 @@ struct TrainingTabView: View {
         workoutManager.allWorkouts.sorted { $0.startDate > $1.startDate }
     }
 
+    /// Upcoming display-only strength sessions from the unified calendar.
+    private var upcomingStrengthSessions: [CalendarEntry] {
+        scheduleManager.calendarEntries
+            .filter { $0.kind == .strength && !$0.completed && ($0.day ?? .distantPast) >= startOfToday }
+            .sorted { $0.date < $1.date }
+    }
+
     var body: some View {
         Group {
             switch viewMode {
@@ -157,6 +164,15 @@ struct TrainingTabView: View {
                         }
                     }
 
+                    if let strengthPlan = scheduleManager.activeStrengthPlan {
+                        Section {
+                            StrengthCycleCard(plan: strengthPlan, scheduleManager: scheduleManager)
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                        }
+                    }
+
                     if !upcomingWorkouts.isEmpty {
                         Section("Upcoming Workouts") {
                             ForEach(upcomingWorkouts, id: \.self) { scheduled in
@@ -165,6 +181,15 @@ struct TrainingTabView: View {
                                 } label: {
                                     ScheduledWorkoutRow(scheduled: scheduled)
                                 }
+                            }
+                        }
+                    }
+
+                    // Display-only Hevy sessions — never enqueued to the watch.
+                    if !upcomingStrengthSessions.isEmpty {
+                        Section("Strength Sessions") {
+                            ForEach(upcomingStrengthSessions) { entry in
+                                StrengthSessionRow(entry: entry, showsDate: true)
                             }
                         }
                     }

@@ -46,10 +46,15 @@ class WorkoutScheduleManager: ObservableObject {
     @Published var refreshState: RefreshState = .idle
     @Published var authorizationState: WorkoutScheduler.AuthorizationState = .notDetermined
     @Published var activePlan: TrainingPlan?
+    /// The active strength cycle, if any — display-only (Hevy routine markers),
+    /// never scheduled to the watch. Can coexist with an active running plan.
+    @Published var activeStrengthPlan: TrainingPlan?
     @Published var planWorkouts: [PlanWorkout] = []
     @Published var isLoadingPlan = true
     @Published var allPlans: [TrainingPlan] = []
     @Published var isLoadingPlans = false
+    /// Merged run + strength agenda from /api/schedule/calendar.
+    @Published var calendarEntries: [CalendarEntry] = []
 
     private let apiClient: WorkoutAPIClient
 
@@ -121,8 +126,11 @@ class WorkoutScheduleManager: ObservableObject {
         isLoadingPlan = true
         defer { isLoadingPlan = false }
         do {
-            let plan = try await apiClient.fetchActivePlan()
+            // A running plan and a strength cycle can both be active.
+            let plans = try await apiClient.fetchActivePlans()
+            let plan = plans.first { !$0.isStrength }
             activePlan = plan
+            activeStrengthPlan = plans.first { $0.isStrength }
 
             if let plan {
                 planWorkouts = try await apiClient.fetchPlanWorkouts(planId: plan.id)
@@ -131,6 +139,48 @@ class WorkoutScheduleManager: ObservableObject {
             }
         } catch {
             print("Failed to load active plan: \(error)")
+        }
+
+        await loadScheduleCalendar()
+    }
+
+    // MARK: - Unified Schedule Calendar
+
+    private static let calendarDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// Refreshes the merged run + strength agenda: two weeks back (so
+    /// completed strength sessions keep their ✓ on the timeline) through
+    /// eight weeks ahead.
+    func loadScheduleCalendar() async {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard let from = calendar.date(byAdding: .day, value: -14, to: today),
+              let to = calendar.date(byAdding: .day, value: 56, to: today) else { return }
+
+        do {
+            let response = try await apiClient.fetchScheduleCalendar(
+                from: Self.calendarDayFormatter.string(from: from),
+                to: Self.calendarDayFormatter.string(from: to)
+            )
+            calendarEntries = response.entries
+        } catch {
+            // Best-effort: keep whatever agenda we already have.
+            print("Failed to load schedule calendar: \(error)")
+        }
+    }
+
+    /// Fetches a plan's expanded cadence (dated sessions + conflict warnings)
+    /// on demand for the plan detail screen.
+    func schedule(forPlan planId: UUID) async -> PlanScheduleResponse? {
+        do {
+            return try await apiClient.fetchPlanSchedule(planId: planId)
+        } catch {
+            print("Failed to load schedule for plan \(planId): \(error)")
+            return nil
         }
     }
 
@@ -223,6 +273,9 @@ class WorkoutScheduleManager: ObservableObject {
             } else {
                 // Still sync inventory to report completion status
                 await syncWorkoutInventory()
+                // Keep the merged agenda fresh (strength sessions can be
+                // added or completed without any queue work existing).
+                await loadScheduleCalendar()
             }
         } catch {
             // Silent failure — auto-sync is best-effort

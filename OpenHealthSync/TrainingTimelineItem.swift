@@ -2,10 +2,12 @@ import Foundation
 import WorkoutKit
 
 /// A unified representation of any workout-related item on the training timeline.
-/// Wraps both WorkoutKit scheduled plans and HealthKit workout summaries.
+/// Wraps WorkoutKit scheduled plans, HealthKit workout summaries, and
+/// display-only strength sessions from the unified schedule calendar.
 enum TrainingTimelineItem: Identifiable {
     case scheduledPlan(ScheduledWorkoutPlan)
     case pastWorkout(WorkoutSummary)
+    case strengthSession(CalendarEntry)
 
     var id: String {
         switch self {
@@ -13,16 +15,21 @@ enum TrainingTimelineItem: Identifiable {
             return "plan-\(plan.hashValue)"
         case .pastWorkout(let summary):
             return "hk-\(summary.id.uuidString)"
+        case .strengthSession(let entry):
+            return "strength-\(entry.id)"
         }
     }
 
-    /// The canonical Date for sorting and day-grouping.
+    /// The canonical Date for sorting and day-grouping. Strength sessions
+    /// carry no time of day, so they sit at local midnight and list first.
     var date: Date {
         switch self {
         case .scheduledPlan(let plan):
             return Calendar.current.date(from: plan.date) ?? .distantPast
         case .pastWorkout(let summary):
             return summary.startDate
+        case .strengthSession(let entry):
+            return entry.day ?? .distantPast
         }
     }
 
@@ -32,9 +39,10 @@ enum TrainingTimelineItem: Identifiable {
     }
 
     enum DotCategory {
-        case upcomingPlan   // blue
-        case completedPlan  // green
-        case pastWorkout    // orange
+        case upcomingPlan     // blue
+        case completedPlan    // green
+        case pastWorkout      // orange
+        case strengthSession  // violet
     }
 
     var dotCategory: DotCategory {
@@ -43,6 +51,8 @@ enum TrainingTimelineItem: Identifiable {
             return plan.complete ? .completedPlan : .upcomingPlan
         case .pastWorkout:
             return .pastWorkout
+        case .strengthSession(let entry):
+            return entry.completed ? .completedPlan : .strengthSession
         }
     }
 }

@@ -48,6 +48,13 @@ struct TrainingCalendarView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 16)
 
+                // Active strength cycle (display-only Hevy cadence)
+                if let strengthPlan = scheduleManager.activeStrengthPlan {
+                    StrengthCycleCard(plan: strengthPlan, scheduleManager: scheduleManager)
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                }
+
                 // Week strip
                 WeekStripView(
                     timelineItems: timelineItemsByDay,
@@ -93,10 +100,30 @@ struct TrainingCalendarView: View {
             dict[item.dayComponents, default: []].append(item)
         }
 
+        // Strength sessions from the unified schedule calendar (display-only).
+        // Runs from the feed are skipped: they already appear via the
+        // WorkoutKit schedule above.
+        var completedStrengthDays: Set<DateComponents> = []
+        for entry in scheduleManager.calendarEntries where entry.kind == .strength {
+            let item = TrainingTimelineItem.strengthSession(entry)
+            dict[item.dayComponents, default: []].append(item)
+            if entry.completed {
+                completedStrengthDays.insert(item.dayComponents)
+            }
+        }
+
         for summary in workoutManager.allWorkouts {
             // Skip past workouts that match a completed scheduled plan —
             // the plan row already shows the completion status
             if matchesCompletedPlan(summary, completedPlanIds: completedPlanIds) {
+                continue
+            }
+            // Likewise skip strength workouts on days whose scheduled session
+            // is completed — the session row carries the ✓ and links to it.
+            if summary.activityType == "traditionalStrength",
+               completedStrengthDays.contains(
+                   calendar.dateComponents([.year, .month, .day], from: summary.startDate)
+               ) {
                 continue
             }
             let item = TrainingTimelineItem.pastWorkout(summary)
@@ -203,6 +230,18 @@ private struct DayDetailSection: View {
         let descriptor = FetchDescriptor<WorkoutFeedback>()
         guard let allFeedback = try? modelContext.fetch(descriptor) else { return nil }
         return allFeedback.first { $0.workoutId == workoutId && !$0.dismissed }
+    }
+
+    /// Find the HealthKit strength workout that completed a scheduled
+    /// strength session (same local day, matching the server's auto-match).
+    private func matchedStrengthWorkout(for entry: CalendarEntry) -> WorkoutSummary? {
+        guard let day = entry.day else { return nil }
+        return workoutManager.allWorkouts
+            .filter {
+                $0.activityType == "traditionalStrength"
+                    && Calendar.current.isDate($0.startDate, inSameDayAs: day)
+            }
+            .min(by: { $0.startDate < $1.startDate })
     }
 
     /// Find the matching HKWorkout summary for a completed plan workout.
@@ -315,6 +354,32 @@ private struct DayDetailSection: View {
                     .innerCardStyle()
                 }
                 .buttonStyle(.plain)
+            }
+        case .strengthSession(let entry):
+            // Display-only Hevy session. When completed, link through to the
+            // matching HealthKit strength workout (hidden from the raw list).
+            if entry.completed, let matched = matchedStrengthWorkout(for: entry) {
+                NavigationLink {
+                    WorkoutDetailView(
+                        summary: matched,
+                        workoutManager: workoutManager
+                    )
+                } label: {
+                    HStack {
+                        StrengthSessionRow(entry: entry)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding()
+                    .innerCardStyle(tint: .green)
+                }
+                .buttonStyle(.plain)
+            } else {
+                StrengthSessionRow(entry: entry)
+                    .padding()
+                    .innerCardStyle(tint: entry.completed ? .green : nil)
             }
         case .pastWorkout(let summary):
             NavigationLink {

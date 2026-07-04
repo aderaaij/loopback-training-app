@@ -124,6 +124,9 @@ struct WeekDayCell: View {
                     if dotCategories.contains(.upcomingPlan) {
                         Circle().fill(LB.blue).frame(width: 5, height: 5)
                     }
+                    if dotCategories.contains(.strengthSession) {
+                        Circle().fill(LB.violet).frame(width: 5, height: 5)
+                    }
                     if dotCategories.contains(.completedPlan) {
                         Circle().fill(LB.green).frame(width: 5, height: 5)
                     }

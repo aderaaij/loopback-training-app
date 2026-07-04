@@ -89,7 +89,7 @@ struct PlanRow: View {
         HStack(spacing: 12) {
             Image(systemName: PlanFormat.icon(for: plan.activityType))
                 .font(.title3)
-                .foregroundStyle(.blue)
+                .foregroundStyle(plan.isStrength ? LB.violet : LB.blue)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -142,9 +142,23 @@ struct PlanDetailView: View {
 
     @State private var workouts: [PlanWorkout] = []
     @State private var isLoading = true
+    @State private var planSchedule: PlanScheduleResponse?
 
     private var sortedWorkouts: [PlanWorkout] {
         workouts.sorted { ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture) }
+    }
+
+    /// Footer for the cadence section: the cycle horizon, cueing when it's
+    /// time to plan the next block.
+    private var horizonText: String? {
+        guard let end = plan.end, let days = plan.daysRemaining else { return nil }
+        let endString = PlanFormat.medium.string(from: end)
+        if days < 0 {
+            return "Cycle ended \(endString) — time to plan the next one."
+        } else if days == 0 {
+            return "Cycle ends today."
+        }
+        return "Cycle ends \(endString) · \(days) day\(days == 1 ? "" : "s") left."
     }
 
     var body: some View {
@@ -164,6 +178,28 @@ struct PlanDetailView: View {
                 Section("Goals") {
                     ForEach(Array(goals.enumerated()), id: \.offset) { _, goal in
                         GoalRow(goal: goal)
+                    }
+                }
+            }
+
+            if let schedule = planSchedule?.schedule ?? plan.metadata?.schedule {
+                Section {
+                    ForEach(schedule.orderedDays, id: \.weekday) { day in
+                        CadenceRow(weekday: day.weekday, routine: day.routine)
+                    }
+                } header: {
+                    Text("Weekly Cadence")
+                } footer: {
+                    if let horizonText {
+                        Text(horizonText)
+                    }
+                }
+            }
+
+            if let sessions = planSchedule?.sessions, !sessions.isEmpty {
+                Section("Sessions (\(sessions.count))") {
+                    ForEach(sessions) { session in
+                        ScheduleSessionRow(session: session)
                     }
                 }
             }
@@ -204,6 +240,12 @@ struct PlanDetailView: View {
                 workouts = await scheduleManager.workouts(forPlan: plan.id)
                 isLoading = false
             }
+
+            // Expand the cadence to dated sessions (with conflict warnings)
+            // for plans that carry one.
+            if plan.isStrength || plan.metadata?.schedule != nil {
+                planSchedule = await scheduleManager.schedule(forPlan: plan.id)
+            }
         }
     }
 }
@@ -236,6 +278,64 @@ private struct GoalRow: View {
             parts.append("by week \(byWeek + 1)")
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+private struct CadenceRow: View {
+    let weekday: String
+    let routine: RoutineRef
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(weekday.capitalized)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 40, alignment: .leading)
+            Image(systemName: "dumbbell.fill")
+                .font(.caption)
+                .foregroundStyle(LB.violet)
+            Text(routine.title)
+                .font(.subheadline)
+            Spacer()
+        }
+    }
+}
+
+private struct ScheduleSessionRow: View {
+    let session: ScheduleSession
+
+    private var isPast: Bool {
+        guard let day = session.day else { return false }
+        return day < Calendar.current.startOfDay(for: Date())
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "dumbbell.fill")
+                .font(.caption)
+                .foregroundStyle(isPast ? Color.secondary.opacity(0.4) : LB.violet)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.title)
+                    .font(.subheadline)
+                    .foregroundStyle(isPast ? .secondary : .primary)
+                if let day = session.day {
+                    Text(PlanFormat.medium.string(from: day))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if session.conflict {
+                    let overlaps = session.conflictsWith?.joined(separator: ", ")
+                    Label(
+                        overlaps.map { "Overlaps \($0)" } ?? "Overlaps a scheduled run",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(LB.amber)
+                }
+            }
+            Spacer()
+        }
+        .padding(.vertical, 1)
     }
 }
 
@@ -296,6 +396,7 @@ enum PlanFormat {
         case "swimming", "swim": return "figure.pool.swim"
         case "walking", "walk": return "figure.walk"
         case "hiking", "hike": return "figure.hiking"
+        case "strength", "gym", "lifting": return "dumbbell.fill"
         default: return "figure.run.circle"
         }
     }
