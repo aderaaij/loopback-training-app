@@ -102,10 +102,17 @@ struct SomaticApp: App {
                     }
                 }
                 Task {
+                    // Only prompt once the user is actually signed in.
+                    guard session.isAuthenticated else { return }
                     await notificationManager.requestPermission()
                 }
             }
             .task {
+                // MainTabView only renders when authenticated, but an in-flight
+                // task can outlive a sign-out (e.g. a 401 mid-session); guard so
+                // permission prompts never fire on the way to the login screen.
+                guard session.isAuthenticated else { return }
+
                 await scheduleManager.requestAuthorization()
                 await scheduleManager.loadScheduledWorkouts()
                 await scheduleManager.autoSync()

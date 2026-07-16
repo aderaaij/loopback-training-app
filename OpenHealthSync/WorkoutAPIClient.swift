@@ -435,21 +435,26 @@ enum WorkoutAPIError: LocalizedError {
 }
 
 // MARK: - Auth Models
+//
+// Pure data models. Marked `nonisolated` because the project defaults types to
+// @MainActor (SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor); without this their
+// Codable conformances would be main-actor-isolated and can't be used from the
+// WorkoutAPIClient actor.
 
-struct AuthUser: Decodable, Sendable {
+nonisolated struct AuthUser: Decodable, Sendable {
     let id: String
     let username: String
     let displayName: String
     let role: String
 }
 
-struct LoginResponse: Decodable, Sendable {
+nonisolated struct LoginResponse: Decodable, Sendable {
     let token: String
     let tokenId: String
     let user: AuthUser
 }
 
-struct AuthToken: Decodable, Sendable {
+nonisolated struct AuthToken: Decodable, Sendable {
     let id: String
     let name: String?
     let createdAt: String?
@@ -457,7 +462,7 @@ struct AuthToken: Decodable, Sendable {
     let expiresAt: String?
 }
 
-struct MeResponse: Decodable, Sendable {
+nonisolated struct MeResponse: Decodable, Sendable {
     let user: AuthUser
     let tokens: [AuthToken]?
 }
@@ -465,7 +470,7 @@ struct MeResponse: Decodable, Sendable {
 // MARK: - Feedback Payload
 
 /// Codable payload mirroring WorkoutFeedback for API submission.
-struct WorkoutFeedbackPayload: Codable, Sendable {
+nonisolated struct WorkoutFeedbackPayload: Codable, Sendable {
     let id: UUID
     let workoutId: UUID
     let workoutName: String

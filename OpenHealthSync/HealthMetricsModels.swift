@@ -52,7 +52,9 @@ struct SleepStages: Codable, Sendable {
 
 // MARK: - Bulk Payload
 
-struct HealthMetricsBulkPayload: Codable, Sendable {
+// Marked `nonisolated` so its Codable conformance can be used from the
+// WorkoutAPIClient actor (types default to @MainActor in this project).
+nonisolated struct HealthMetricsBulkPayload: Codable, Sendable {
     let metrics: [DailyHealthMetrics]
 }
 
