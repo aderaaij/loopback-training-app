@@ -18,7 +18,7 @@ struct PlansListView: View {
         case .current, .upcoming:
             // Soonest first.
             return matching.sorted { startKey($0) < startKey($1) }
-        case .archived:
+        case .completed, .archived:
             // Most recently ended first (fall back to start date when open-ended).
             return matching.sorted { endKey($0) > endKey($1) }
         }
@@ -36,6 +36,7 @@ struct PlansListView: View {
         List {
             section(for: .current)
             section(for: .upcoming)
+            section(for: .completed)
             section(for: .archived)
         }
         .navigationTitle("Plans")
@@ -125,6 +126,11 @@ struct PlanRow: View {
                 return "Starts \(PlanFormat.short.string(from: start))"
             }
             return "Upcoming"
+        case .completed:
+            if let progress = plan.progress, progress.runsTotal > 0 {
+                return "✓ \(progress.runsCompleted)/\(progress.runsTotal)"
+            }
+            return "✓ Done"
         case .archived:
             if let total = plan.totalWeeks {
                 return "\(total) wk"

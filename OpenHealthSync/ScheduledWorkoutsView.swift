@@ -106,6 +106,16 @@ struct TrainingTabView: View {
                         }
                     }
 
+                    // Plan wrap-up banner — the server marked a plan finishable.
+                    if let finishable = scheduleManager.finishablePlan {
+                        Section {
+                            PlanCompletionBanner(plan: finishable, scheduleManager: scheduleManager)
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                        }
+                    }
+
                     if let plan = scheduleManager.activePlan {
                         Section {
                             PlanOverviewCard(
@@ -269,6 +279,16 @@ struct TrainingTabView: View {
                 missedWorkouts: [workout],
                 detector: missedWorkoutDetector
             )
+        }
+        // Celebration sheet, covering both timeline and list modes. Presented
+        // by a banner tap or the manager's post-sync auto-check; dismissing
+        // without completing snoozes only the auto-present (the sheet handles
+        // that in its onDisappear), the banner stays.
+        .sheet(item: Binding(
+            get: { scheduleManager.celebrationPlan },
+            set: { scheduleManager.celebrationPlan = $0 }
+        )) { plan in
+            PlanCelebrationSheet(plan: plan, scheduleManager: scheduleManager)
         }
         .task {
             await scheduleManager.loadScheduledWorkouts()

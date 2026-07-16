@@ -14,12 +14,14 @@ import Foundation
 enum PlanLifecycle: String, Sendable {
     case upcoming
     case current
+    case completed
     case archived
 
     var label: String {
         switch self {
         case .upcoming: return "Upcoming"
         case .current: return "Current"
+        case .completed: return "Completed"
         case .archived: return "Archived"
         }
     }
@@ -39,9 +41,20 @@ nonisolated struct TrainingPlan: Codable, Sendable, Identifiable {
     let metadata: TrainingPlanMetadata?
     let createdAt: String?
     let updatedAt: String?
+    /// Queue-derived run counts. Only plan *reads* carry it (POST/PATCH
+    /// responses default it to null), and strength plans — scheduled via
+    /// metadata.schedule, not the queue — always report zeros.
+    let progress: PlanProgress?
+    /// Server-computed "offer the wrap-up flow" signal. Optional so a read
+    /// that omits it can never fail-and-drop the plan via FailableDecodable —
+    /// use `isFinishable`. Never derive this client-side; the rule lives on
+    /// the server.
+    private let finishable: Bool?
+
+    var isFinishable: Bool { finishable ?? false }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, status, description, metadata
+        case id, name, status, description, metadata, progress, finishable
         case activityType = "activity_type"
         case startDate = "start_date"
         case endDate = "end_date"
@@ -102,16 +115,19 @@ nonisolated struct TrainingPlan: Codable, Sendable, Identifiable {
         ).day
     }
 
-    /// Bucket the plan into upcoming / current / archived.
+    /// Bucket the plan into upcoming / current / completed / archived.
     ///
     /// An explicit backend status wins: `active` is the current plan (even if it
-    /// starts tomorrow) and `archived` is retired (even if its dates haven't
-    /// passed). For any other free-form status, dates decide: starting in the
-    /// future is upcoming, a passed end date is archived, otherwise current
-    /// (including open-ended plans with no end date).
+    /// starts tomorrow), `completed` was wrapped up via the celebration flow
+    /// (even if it finished early, before its end date), and `archived` is
+    /// retired (even if its dates haven't passed). For any other free-form
+    /// status, dates decide: starting in the future is upcoming, a passed end
+    /// date is archived, otherwise current (including open-ended plans with no
+    /// end date).
     var lifecycle: PlanLifecycle {
         switch status.lowercased() {
         case "active": return .current
+        case "completed": return .completed
         case "archived": return .archived
         default: break
         }
@@ -126,6 +142,38 @@ nonisolated struct TrainingPlan: Codable, Sendable, Identifiable {
             return .archived
         }
         return .current
+    }
+}
+
+// MARK: - Plan Progress
+
+/// Run counts derived from the Apple Watch queue on a plan read.
+nonisolated struct PlanProgress: Codable, Sendable {
+    let runsTotal: Int
+    let runsCompleted: Int
+    let runsSkipped: Int
+    let runsRemaining: Int
+
+    enum CodingKeys: String, CodingKey {
+        case runsTotal = "runs_total"
+        case runsCompleted = "runs_completed"
+        case runsSkipped = "runs_skipped"
+        case runsRemaining = "runs_remaining"
+    }
+}
+
+// MARK: - Plan Completion
+
+/// Response of `POST /api/plans/{id}/complete`. `nextPlan` is another
+/// already-active plan of the same activity type (soonest start first),
+/// or nil when nothing is lined up — that's the "talk to your coach" nudge.
+nonisolated struct PlanCompletionResponse: Codable, Sendable {
+    let plan: TrainingPlan
+    let nextPlan: TrainingPlan?
+
+    enum CodingKeys: String, CodingKey {
+        case plan
+        case nextPlan = "next_plan"
     }
 }
 

@@ -30,6 +30,13 @@ struct TrainingCalendarView: View {
                         .padding(.bottom, 8)
                 }
 
+                // Plan wrap-up banner — the server marked a plan finishable.
+                if let finishable = scheduleManager.finishablePlan {
+                    PlanCompletionBanner(plan: finishable, scheduleManager: scheduleManager)
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                }
+
                 // Plan overview
                 Group {
                     if let plan = scheduleManager.activePlan {

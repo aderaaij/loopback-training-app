@@ -187,6 +187,10 @@ class WorkoutManager: ObservableObject {
             // won't clobber this accurate timestamp on a later call.
             if let planId {
                 try? await apiClient.markPlanWorkoutCompleted(id: planId)
+                // That may have been the plan's final queued run — the server
+                // recomputes `finishable` on every read, so refresh and offer
+                // the celebration while the achievement is fresh.
+                await scheduleManager?.checkForFinishablePlan()
             }
 
             markAsSent(workoutID)

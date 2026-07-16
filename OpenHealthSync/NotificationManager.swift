@@ -52,6 +52,8 @@ class NotificationManager: ObservableObject {
     private let center = UNUserNotificationCenter.current()
     private let missedWorkoutCategoryId = "MISSED_WORKOUT"
     private let missedWorkoutRequestPrefix = "missed-workout-"
+    private let planCelebrationRequestPrefix = "plan-celebration-"
+    private static let notifiedPlansKey = "celebrationNotifiedPlanIds"
 
     // MARK: - Permission
 
@@ -117,6 +119,50 @@ class NotificationManager: ObservableObject {
         } catch {
             print("Failed to schedule missed workout notification: \(error)")
         }
+    }
+
+    /// Fires an immediate local notification when a plan becomes finishable
+    /// while the app is backgrounded (a HealthKit background sync just landed
+    /// the final run). Tapping it opens the app, which auto-presents the
+    /// celebration sheet. Deduplicated per plan in UserDefaults rather than in
+    /// memory: background wakes can spawn a fresh process each time.
+    ///
+    /// Checks the notification-center settings directly instead of
+    /// `isAuthorized` — that flag is only populated by the foreground
+    /// permission flow, which never runs in a background launch.
+    func notifyPlanFinishable(_ plan: TrainingPlan) async {
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized else { return }
+
+        var notifiedIds = Set(UserDefaults.standard.stringArray(forKey: Self.notifiedPlansKey) ?? [])
+        guard !notifiedIds.contains(plan.id.uuidString) else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "You finished \(plan.name) 🎉"
+        content.body = "Tap to celebrate and leave feedback for your coach."
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "\(planCelebrationRequestPrefix)\(plan.id.uuidString)",
+            content: content,
+            trigger: nil // deliver immediately
+        )
+
+        do {
+            try await center.add(request)
+            notifiedIds.insert(plan.id.uuidString)
+            UserDefaults.standard.set(Array(notifiedIds), forKey: Self.notifiedPlansKey)
+        } catch {
+            print("Failed to schedule plan celebration notification: \(error)")
+        }
+    }
+
+    /// Clears a delivered celebration notification once its plan is completed,
+    /// so a stale "you finished" doesn't linger in Notification Center.
+    func clearPlanFinishableNotification(planId: UUID) {
+        center.removeDeliveredNotifications(
+            withIdentifiers: ["\(planCelebrationRequestPrefix)\(planId.uuidString)"]
+        )
     }
 
     /// Cancel all pending missed workout notifications.

@@ -293,6 +293,37 @@ actor WorkoutAPIClient {
         return wrapped.compactMap(\.value)
     }
 
+    // MARK: - Plan Completion (celebration flow)
+
+    /// Confirms a finishable plan as completed, optionally attaching a 1–5
+    /// rating and free-text feedback. The server stores the feedback as a plan
+    /// note the coach LLM reads when shaping the next block — nothing more to
+    /// deliver from the app. A 400 means another surface (dashboard / coach)
+    /// completed it first; that maps to `.planNotActive` so callers refresh
+    /// instead of erroring.
+    func completePlan(id: UUID, feedback: String?, rating: Int?) async throws -> PlanCompletionResponse {
+        let url = baseURL.appendingPathComponent("api/plans/\(id.uuidString)/complete")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        var body: [String: Any] = [:]
+        if let feedback, !feedback.isEmpty { body["feedback"] = feedback }
+        if let rating { body["rating"] = rating }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let http = response as? HTTPURLResponse, http.statusCode == 400 {
+            throw WorkoutAPIError.planNotActive
+        }
+        try validate(response)
+
+        return try JSONDecoder().decode(PlanCompletionResponse.self, from: data)
+    }
+
     // MARK: - Unified Schedule Calendar (runs + strength)
 
     /// Fetches the merged run + strength agenda, date-sorted with conflict
@@ -411,6 +442,7 @@ enum WorkoutAPIError: LocalizedError {
     case unauthorized
     case invalidCredentials
     case rateLimited
+    case planNotActive
 
     var errorDescription: String? {
         switch self {
@@ -424,6 +456,8 @@ enum WorkoutAPIError: LocalizedError {
             return "Incorrect username or password."
         case .rateLimited:
             return "Too many attempts. Wait a minute and try again."
+        case .planNotActive:
+            return "This plan was already completed on another device."
         case .serverError(let code):
             switch code {
             case 401, 403: return "Authentication failed — check your credentials"

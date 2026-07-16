@@ -17,7 +17,7 @@ struct SomaticApp: App {
     @StateObject private var workoutManager: WorkoutManager
     @StateObject private var scheduleManager: WorkoutScheduleManager
     @StateObject private var missedWorkoutDetector = MissedWorkoutDetector()
-    @StateObject private var notificationManager = NotificationManager()
+    @StateObject private var notificationManager: NotificationManager
     @StateObject private var backgroundSyncManager: BackgroundSyncManager
     @StateObject private var session: SessionStore
 
@@ -47,8 +47,11 @@ struct SomaticApp: App {
         wm.configure(serverURL: creds.serverURL, apiKey: creds.token)
         let sm = WorkoutScheduleManager(apiClient: client)
         wm.scheduleManager = sm
+        let nm = NotificationManager()
+        sm.notificationManager = nm
         _workoutManager = StateObject(wrappedValue: wm)
         _scheduleManager = StateObject(wrappedValue: sm)
+        _notificationManager = StateObject(wrappedValue: nm)
         _backgroundSyncManager = StateObject(wrappedValue: BackgroundSyncManager(
             workoutManager: wm,
             healthMetricsSyncer: syncer
@@ -116,7 +119,9 @@ struct SomaticApp: App {
                 await scheduleManager.requestAuthorization()
                 await scheduleManager.loadScheduledWorkouts()
                 await scheduleManager.autoSync()
-                await scheduleManager.loadActivePlan()
+                // Loads the active plan, and offers the wrap-up celebration
+                // if the server says one is finishable.
+                await scheduleManager.checkForFinishablePlan()
 
                 // Request HealthKit auth for health metrics and set up background sync
                 if healthMetricsSyncEnabled {
@@ -132,6 +137,10 @@ struct SomaticApp: App {
                     Task {
                         await scheduleManager.loadScheduledWorkouts()
                         await scheduleManager.autoSync()
+                        // Refresh the plan on foreground: `finishable` is
+                        // recomputed on every read, so a plan whose window
+                        // quietly lapsed gets picked up here.
+                        await scheduleManager.checkForFinishablePlan()
                         await detectAndNotify()
 
                         // Sync health metrics on foreground

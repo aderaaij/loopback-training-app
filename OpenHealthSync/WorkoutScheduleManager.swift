@@ -11,6 +11,7 @@ import Foundation
 import Combine
 import SwiftUI
 import SwiftData
+import UIKit
 import WorkoutKit
 import HealthKit
 
@@ -55,8 +56,25 @@ class WorkoutScheduleManager: ObservableObject {
     @Published var isLoadingPlans = false
     /// Merged run + strength agenda from /api/schedule/calendar.
     @Published var calendarEntries: [CalendarEntry] = []
+    /// The plan the celebration sheet is showing (nil = no sheet). Set by a
+    /// banner tap or by the post-sync auto-check.
+    @Published var celebrationPlan: TrainingPlan?
+    /// Every active plan from the last fetch. `activePlan`/`activeStrengthPlan`
+    /// keep one per activity type for the hero cards, but finishable detection
+    /// must scan all of them: the coach creates follow-up blocks as `active`
+    /// before they start, so a wrapped plan and its successor coexist.
+    @Published private(set) var activePlans: [TrainingPlan] = []
+
+    /// Plans whose auto-presented celebration was dismissed this session.
+    /// The banner keeps showing (the server's `finishable` flag persists until
+    /// someone completes the plan) — this only stops the sheet re-popping
+    /// uninvited.
+    private var celebrationSnoozedIds: Set<UUID> = []
 
     private let apiClient: WorkoutAPIClient
+    /// Posts the "you finished {plan}" local notification when a plan turns
+    /// finishable during a background wake. Set once at app init.
+    weak var notificationManager: NotificationManager?
 
     /// Maps workout plan UUIDs to the DateComponents they were scheduled at.
     /// Needed by WorkoutScheduler.remove(_:at:) to identify which workout to remove.
@@ -128,6 +146,7 @@ class WorkoutScheduleManager: ObservableObject {
         do {
             // A running plan and a strength cycle can both be active.
             let plans = try await apiClient.fetchActivePlans()
+            activePlans = plans
             let plan = plans.first { !$0.isStrength }
             activePlan = plan
             activeStrengthPlan = plans.first { $0.isStrength }
@@ -142,6 +161,61 @@ class WorkoutScheduleManager: ObservableObject {
         }
 
         await loadScheduleCalendar()
+    }
+
+    // MARK: - Plan Completion (celebration flow)
+
+    /// First active plan the server says is ready to wrap up — drives the
+    /// celebration banner on the training tab. Scans every active plan, not
+    /// just the hero-card ones: the finishable plan is often shadowed by its
+    /// already-active successor block.
+    var finishablePlan: TrainingPlan? {
+        activePlans.first { $0.isFinishable }
+    }
+
+    /// Banner tap: always presents, even if the auto-check was snoozed.
+    func presentCelebration(for plan: TrainingPlan) {
+        celebrationPlan = plan
+    }
+
+    /// Called when the celebration sheet is dismissed without completing, so
+    /// the auto-check doesn't immediately re-present it this session.
+    func snoozeCelebration(for planId: UUID) {
+        celebrationSnoozedIds.insert(planId)
+    }
+
+    /// Refreshes the active plans and auto-presents the celebration when one
+    /// is finishable — e.g. right after syncing the workout that completed the
+    /// plan's final queued run, or a plan whose window quietly lapsed.
+    func checkForFinishablePlan() async {
+        await loadActivePlan()
+        guard let plan = finishablePlan else { return }
+
+        // Woken in the background (HealthKit delivered the final run while
+        // the app was closed): the sheet can't present, so announce with a
+        // local notification. Tapping it opens the app, which lands in the
+        // auto-present below on the next check.
+        if UIApplication.shared.applicationState != .active {
+            await notificationManager?.notifyPlanFinishable(plan)
+        }
+
+        guard celebrationPlan == nil,
+              !celebrationSnoozedIds.contains(plan.id) else { return }
+        celebrationPlan = plan
+    }
+
+    /// Completes a plan on the server (optionally with rating/feedback) and
+    /// refreshes every plan surface. Returns the already-active follow-up plan
+    /// of the same activity type, or nil when nothing is lined up.
+    func completePlan(_ plan: TrainingPlan, feedback: String?, rating: Int?) async throws -> TrainingPlan? {
+        let response = try await apiClient.completePlan(id: plan.id, feedback: feedback, rating: rating)
+        celebrationSnoozedIds.insert(plan.id)
+        notificationManager?.clearPlanFinishableNotification(planId: plan.id)
+        await loadActivePlan()
+        if !allPlans.isEmpty {
+            await loadAllPlans()
+        }
+        return response.nextPlan
     }
 
     // MARK: - Unified Schedule Calendar
