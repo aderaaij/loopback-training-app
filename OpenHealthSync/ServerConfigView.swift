@@ -58,7 +58,7 @@ struct ServerConfigView: View {
     private var onboardingContent: some View {
         Group {
             Section {
-                Text("Connect Somatic to your training API to sync workouts, schedule training plans, and track health metrics.")
+                Text("Connect Loopback to your training API to sync workouts, schedule training plans, and track health metrics.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

@@ -11,7 +11,7 @@ import WorkoutKit
 import OpenWearablesHealthSDK
 
 @main
-struct SomaticApp: App {
+struct LoopbackApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var health = HealthManager()
     @StateObject private var workoutManager: WorkoutManager

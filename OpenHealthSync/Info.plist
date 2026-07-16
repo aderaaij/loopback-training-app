@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Somatic</string>
+    <string>Loopback</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.healthcare-fitness</string>
     <key>NSHealthShareUsageDescription</key>
-    <string>Somatic reads your health and workout data to sync with your training server for personalized coaching.</string>
+    <string>Loopback reads your health and workout data to sync with your training server for personalized coaching.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>
