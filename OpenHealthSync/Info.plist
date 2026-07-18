@@ -8,16 +8,6 @@
     <string>public.app-category.healthcare-fitness</string>
     <key>NSHealthShareUsageDescription</key>
     <string>Loopback reads your health and workout data to sync with your training server for personalized coaching.</string>
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>fetch</string>
-        <string>processing</string>
-    </array>
-    <key>BGTaskSchedulerPermittedIdentifiers</key>
-    <array>
-        <string>com.openwearables.healthsdk.task.refresh</string>
-        <string>com.openwearables.healthsdk.task.process</string>
-    </array>
     <key>WorkoutAPIBaseURL</key>
     <string>$(WORKOUT_API_BASE_URL)</string>
     <key>WorkoutAPIKey</key>

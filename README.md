@@ -54,10 +54,6 @@ Detects past-due incomplete workouts and collects structured feedback:
 - Action selection (reschedule, adjust plan, skip)
 - Feedback synced to Training API for LLM pattern analysis
 
-### Open Wearables Integration (Optional)
-
-Optionally syncs granular HealthKit data to a self-hosted Open Wearables server. Disabled by default — enable in Settings for full-spectrum health data warehousing.
-
 ## Requirements
 
 - iOS 26+
@@ -149,7 +145,6 @@ Build and run on a physical device. On first launch, enter your Training API ser
 | `HealthMetricsSyncer` | Actor that queries HealthKit for daily health metrics and syncs to Training API |
 | `BackgroundSyncManager` | Registers HealthKit background delivery observers for automatic workout and metrics sync |
 | `MissedWorkoutDetector` | Detects past-due incomplete workouts and manages feedback collection |
-| `HealthManager` | Manages optional OpenWearablesHealthSDK lifecycle |
 
 ### Key Patterns
 

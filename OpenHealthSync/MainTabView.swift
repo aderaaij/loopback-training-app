@@ -5,14 +5,11 @@ enum LBTab: Hashable {
 }
 
 struct MainTabView: View {
-    @ObservedObject var health: HealthManager
     @ObservedObject var workoutManager: WorkoutManager
     @ObservedObject var scheduleManager: WorkoutScheduleManager
     @ObservedObject var missedWorkoutDetector: MissedWorkoutDetector
     @ObservedObject var session: SessionStore
     let onReconnect: (String, String) async throws -> Void
-
-    @AppStorage("openWearablesEnabled") private var openWearablesEnabled = false
 
     @State private var tab: LBTab = .training
 
@@ -33,11 +30,9 @@ struct MainTabView: View {
                 case .settings:
                     NavigationStack {
                         SettingsTabView(
-                            health: health,
                             workoutManager: workoutManager,
                             scheduleManager: scheduleManager,
                             session: session,
-                            openWearablesEnabled: openWearablesEnabled,
                             onReconnect: onReconnect
                         )
                     }
@@ -98,11 +93,9 @@ struct LBTabBar: View {
 // MARK: - Settings Tab
 
 private struct SettingsTabView: View {
-    @ObservedObject var health: HealthManager
     @ObservedObject var workoutManager: WorkoutManager
     @ObservedObject var scheduleManager: WorkoutScheduleManager
     @ObservedObject var session: SessionStore
-    let openWearablesEnabled: Bool
     let onReconnect: (String, String) async throws -> Void
 
     var body: some View {
@@ -117,9 +110,6 @@ private struct SettingsTabView: View {
             onSignOut: {
                 Task {
                     await session.signOut()
-                    if openWearablesEnabled {
-                        health.signOutAndReset()
-                    }
                 }
             },
             onRemoveAllWorkouts: {

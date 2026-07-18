@@ -8,12 +8,10 @@
 import SwiftUI
 import SwiftData
 import WorkoutKit
-import OpenWearablesHealthSDK
 
 @main
 struct LoopbackApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var health = HealthManager()
     @StateObject private var workoutManager: WorkoutManager
     @StateObject private var scheduleManager: WorkoutScheduleManager
     @StateObject private var missedWorkoutDetector = MissedWorkoutDetector()
@@ -22,9 +20,7 @@ struct LoopbackApp: App {
     @StateObject private var session: SessionStore
 
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
-    @AppStorage("openWearablesEnabled") private var openWearablesEnabled: Bool = false
     @AppStorage("healthMetricsSyncEnabled") private var healthMetricsSyncEnabled: Bool = true
-    @AppStorage("serverURL") private var owServerURL: String = ""
     @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
@@ -90,7 +86,6 @@ struct LoopbackApp: App {
             }
         } else {
             MainTabView(
-                health: health,
                 workoutManager: workoutManager,
                 scheduleManager: scheduleManager,
                 missedWorkoutDetector: missedWorkoutDetector,
@@ -107,17 +102,6 @@ struct LoopbackApp: App {
                 session.handleUnauthorized()
             }
             .onAppear {
-                // Restore OpenWearables session if enabled
-                if openWearablesEnabled && !owServerURL.isEmpty {
-                    if !health.restoreSession(host: owServerURL) {
-                        // Session restore failed — don't wipe Training API config
-                    }
-                    health.onSyncCompleted = { [weak workoutManager] in
-                        Task {
-                            await workoutManager?.extractNewWorkouts()
-                        }
-                    }
-                }
                 Task {
                     // Only prompt once the user is actually signed in.
                     guard session.isAuthenticated else { return }

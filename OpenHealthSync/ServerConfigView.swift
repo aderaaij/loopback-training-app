@@ -25,13 +25,8 @@ struct ServerConfigView: View {
     @AppStorage("trainingAPIKey") private var storedAPIKey: String = ""
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
     @AppStorage("healthMetricsSyncEnabled") private var healthMetricsSyncEnabled: Bool = true
-    @AppStorage("openWearablesEnabled") private var openWearablesEnabled: Bool = false
     @AppStorage("weekStartsOnMonday") private var weekStartsOnMonday: Bool = true
     @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
-
-    // OpenWearables (only in settings)
-    @AppStorage("serverURL") private var owServerURL: String = ""
-    @AppStorage("userId") private var owUserId: String = ""
 
     var body: some View {
         Form {
@@ -146,27 +141,6 @@ struct ServerConfigView: View {
                 )) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Text(mode.label).tag(mode)
-                    }
-                }
-            }
-
-            Section("Open Wearables (Advanced)") {
-                Toggle("Enable Open Wearables sync", isOn: $openWearablesEnabled)
-
-                if openWearablesEnabled {
-                    Text("Syncs granular health data to a separate Open Wearables server. This is optional — health metrics are already synced to your Training API.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if !owServerURL.isEmpty {
-                        HStack {
-                            Text("Server")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(owServerURL)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 }
             }
