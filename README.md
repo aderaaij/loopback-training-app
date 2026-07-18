@@ -1,6 +1,6 @@
-# Somatic
+# Loopback – Run Coach (iOS)
 
-A privacy-first training companion for iOS that connects Apple Health data to AI coaching. Manages the full workout lifecycle — plan creation, Apple Watch scheduling, execution tracking, and performance analysis — all through a self-hosted backend you control.
+A privacy-first training companion for iOS that connects Apple Health data to AI coaching. Manages the full workout lifecycle — plan creation, Apple Watch scheduling, execution tracking, and performance analysis — all through a self-hosted backend you control: the [Loopback Server](https://github.com/aderaaij/loopback-training-server).
 
 ## Features
 
@@ -58,20 +58,20 @@ Detects past-due incomplete workouts and collects structured feedback:
 
 - iOS 26+
 - Xcode 26+
-- A self-hosted [Training API](https://github.com/aderaaij/training-api) server
+- A self-hosted [Loopback Server](https://github.com/aderaaij/loopback-training-server) (the Training API)
 
 ## Server Setup
 
-Somatic connects to a self-hosted Training API (FastAPI + PostgreSQL) that stores workouts, manages training plans, syncs health metrics, and provides an MCP server for AI integration.
+Loopback connects to a self-hosted [Loopback Server](https://github.com/aderaaij/loopback-training-server) (FastAPI + PostgreSQL) that stores workouts, manages training plans, syncs health metrics, and provides an MCP server for AI integration.
 
 ```bash
-git clone https://github.com/aderaaij/training-api.git
-cd training-api
-cp .env.example .env  # Edit with your DATABASE_URL and API_KEY
-docker compose up -d
+git clone https://github.com/aderaaij/loopback-training-server.git
+cd loopback-training-server
+cp .env.example .env      # set BOOTSTRAP_ADMIN_PASSWORD
+docker compose up -d      # pulls a prebuilt image; migrations run automatically
 ```
 
-The API runs on port 8001 by default. Expose it over HTTPS using [Tailscale Funnel](https://tailscale.com/kb/1223/funnel/) or a reverse proxy like Caddy/nginx.
+Open the dashboard at `http://localhost:8001`, sign in as `admin`, and create an account for each athlete — the app signs in with those credentials. The full quick start, multi-user walkthrough, and exposure options are in the [server README](https://github.com/aderaaij/loopback-training-server#quick-start). The API runs on port 8001 by default; expose it over HTTPS using [Tailscale Funnel](https://tailscale.com/kb/1223/funnel/) or a reverse proxy like Caddy/nginx.
 
 ### Key Endpoints
 
@@ -86,22 +86,24 @@ The API runs on port 8001 by default. Expose it over HTTPS using [Tailscale Funn
 | `GET` | `/api/plans/{id}/workouts` | Returns all workouts for a plan |
 | `POST` | `/api/workouts/feedback` | Records missed workout feedback |
 
-All endpoints require `Authorization: Bearer <API_KEY>`.
+All endpoints require a per-user bearer token, which the app mints via `POST /api/auth/login` when you sign in (tokens can also be created in the server dashboard under **Settings → Create token**).
 
 ### MCP Integration
 
-The Training API includes an MCP server at `/mcp` that lets AI assistants (like Claude) create training plans, queue workouts, query performance data, read health metrics, and analyze missed workout patterns. See the [Training API repository](https://github.com/aderaaij/training-api) for setup instructions.
+The Training API includes an MCP server at `/mcp` that lets AI assistants (like Claude) create training plans, queue workouts, query performance data, read health metrics, and analyze missed workout patterns. See the [Loopback Server repository](https://github.com/aderaaij/loopback-training-server) for setup instructions.
 
 ## App Setup
 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/aderaaij/somatic.git
-cd somatic
+git clone https://github.com/aderaaij/loopback-training-app.git
+cd loopback-training-app
 ```
 
-### 2. Configure secrets
+### 2. (Optional) Pre-fill dev credentials
+
+You can normally skip this: on first launch the app shows a login screen where you enter the server URL, username, and password, and it mints its own per-device token. For development builds you can pre-seed the server URL (and optionally a pre-minted token) instead:
 
 ```bash
 cp Secrets.example.xcconfig Secrets.xcconfig
@@ -110,11 +112,11 @@ cp Secrets.example.xcconfig Secrets.xcconfig
 Edit `Secrets.xcconfig`:
 
 ```
-WORKOUT_API_BASE_URL = https://your-training-api.example.com:8443
-WORKOUT_API_KEY = your-training-api-key-here
+WORKOUT_API_BASE_URL = https://your-server.example.com:8443
+WORKOUT_API_KEY = optional-pre-minted-token
 ```
 
-> `Secrets.xcconfig` is git-ignored and will never be committed. The Training API URL and key can also be configured in-app during onboarding.
+> `Secrets.xcconfig` is git-ignored and will never be committed. Its values flow through Info.plist and seed the app once; signing in from the login screen overrides them.
 
 ### 3. Open in Xcode
 
@@ -122,7 +124,7 @@ WORKOUT_API_KEY = your-training-api-key-here
 open OpenHealthSync.xcodeproj
 ```
 
-Set `Secrets.xcconfig` as the base configuration:
+If you created `Secrets.xcconfig` in step 2, set it as the base configuration:
 
 1. Select the **OpenHealthSync** project in the navigator
 2. Go to **Info** → **Configurations**
@@ -130,7 +132,7 @@ Set `Secrets.xcconfig` as the base configuration:
 
 ### 4. Run
 
-Build and run on a physical device. On first launch, enter your Training API server URL and API key. The app will request HealthKit permissions for workout and health metric access.
+Build and run on a physical device. On first launch, sign in with your server URL, username, and password (accounts are created by the admin in the server dashboard); pasting a pre-minted token works as an advanced alternative. The app will request HealthKit permissions for workout and health metric access.
 
 > HealthKit is available in the simulator but has no data. For full testing, use a physical device with an Apple Watch.
 
