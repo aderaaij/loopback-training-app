@@ -226,6 +226,7 @@ struct WorkoutDetailView: View {
     @ObservedObject var workoutManager: WorkoutManager
 
     @State private var detailed: DetailedWorkout?
+    @State private var context: WorkoutContext?
     @State private var loading = true
 
     private var status: WorkoutExtractionStatus {
@@ -247,6 +248,10 @@ struct WorkoutDetailView: View {
                     summaryStatGrid
                 }
 
+                if let context, let item = context.queueItem {
+                    planSection(context: context, item: item)
+                }
+
                 extractionCard
             }
             .padding(18)
@@ -255,10 +260,92 @@ struct WorkoutDetailView: View {
         .navigationTitle(summary.activityName)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            detailed = await workoutManager.getDetailedWorkout(for: summary.id)
+            // HealthKit detail and server plan-linkage load in parallel; the
+            // context call 404s (→ nil) for workouts the server never saw,
+            // and any other failure just means no Plan card.
+            async let detailedTask = workoutManager.getDetailedWorkout(for: summary.id)
+            async let contextTask = workoutManager.apiClient.fetchWorkoutContext(id: summary.id)
+            detailed = await detailedTask
+            context = (try? await contextTask) ?? nil
             loading = false
         }
     }
+
+    // MARK: Plan linkage (server context)
+
+    /// The server's authoritative linkage: which queued session this workout
+    /// fulfilled, in which plan, with live status and any missed-day feedback.
+    private func planSection(context: WorkoutContext, item: WorkoutContextQueueItem) -> some View {
+        LBDetailSection(title: "Plan", trailing: context.plan?.name?.uppercased()) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(item.title ?? "Planned session")
+                        .font(.lbBody(14, .semibold))
+                        .foregroundStyle(LB.textPrimary)
+                        .lineLimit(2)
+                    Spacer()
+                    if let status = item.status {
+                        LBStatusChip(text: status, color: statusChipColor(status))
+                    }
+                }
+
+                if let scheduleLine {
+                    Text(scheduleLine)
+                        .font(.lbMono(11))
+                        .foregroundStyle(LB.textTertiary)
+                }
+
+                if let line = feedbackLine(from: context.feedback) {
+                    Text(line)
+                        .font(.lbBody(12))
+                        .foregroundStyle(LB.textSecondary)
+                }
+            }
+        }
+    }
+
+    /// "Skipped — 😴 Tired / low energy" from the missed-day check-in, when
+    /// one exists. Raw strings match MissedWorkout{Action,Reason} raw values;
+    /// unknown values fall back to the raw string rather than hiding the line.
+    private func feedbackLine(from feedback: WorkoutContextFeedback?) -> String? {
+        guard let feedback, feedback.dismissed != true else { return nil }
+        var parts: [String] = []
+        if let action = feedback.action {
+            parts.append(MissedWorkoutAction(rawValue: action)?.label ?? action)
+        }
+        if let reason = feedback.reason {
+            let mapped = MissedWorkoutReason(rawValue: reason)
+            parts.append([mapped?.emoji, mapped?.label ?? reason].compactMap(\.self).joined(separator: " "))
+        }
+        if let note = feedback.reasonNote, !note.isEmpty {
+            parts.append("“\(note)”")
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " — ")
+    }
+
+    /// "Planned Mon 08:00 · ran 08:14" — scheduled vs actual start.
+    private var scheduleLine: String? {
+        guard let scheduled = parseServerDate(context?.queueItem?.scheduledDate) else { return nil }
+        let planned = Self.plannedFormatter.string(from: scheduled)
+        let actual = summary.startDate.formatted(.dateTime.hour().minute())
+        return "Planned \(planned) · ran \(actual)"
+    }
+
+    private func statusChipColor(_ status: String) -> Color {
+        switch status {
+        case "completed": return LB.green
+        case "skipped": return LB.textMuted
+        case "pending", "scheduled", "queued": return LB.blue
+        default: return LB.textSecondary
+        }
+    }
+
+    private static let plannedFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE HH:mm"
+        return f
+    }()
 
     // MARK: Header
 

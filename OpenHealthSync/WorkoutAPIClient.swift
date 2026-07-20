@@ -174,6 +174,28 @@ actor WorkoutAPIClient {
         return try JSONDecoder().decode([ServerWorkoutSummaryRow].self, from: data)
     }
 
+    /// Authoritative plan linkage for a synced workout (queue item, plan,
+    /// feedback). `id` is the HealthKit UUID — the server's workout PK.
+    /// A 404 means the workout isn't on the server (not synced yet, or a
+    /// different account) — that's a normal case and returns nil; only a 401
+    /// goes through the session-wipe path in `validate`.
+    func fetchWorkoutContext(id: UUID) async throws -> WorkoutContext? {
+        let url = baseURL.appendingPathComponent("api/workouts/\(id.uuidString)/context")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        try validate(response, accepting: [404])
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+            return nil
+        }
+
+        return try JSONDecoder().decode(WorkoutContext.self, from: data)
+    }
+
     // MARK: - Workout Inventory Sync
 
     func syncInventory(_ inventory: [WorkoutInventoryItem]) async throws {
