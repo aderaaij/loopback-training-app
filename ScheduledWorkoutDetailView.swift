@@ -95,7 +95,7 @@ struct ScheduledWorkoutDetailView: View {
         Section("Pacer") {
             LabeledContent("Activity", value: pacer.activity.displayName)
             LabeledContent("Distance", value: formatMeasurement(pacer.distance))
-            LabeledContent("Time", value: formatMeasurement(pacer.time))
+            LabeledContent("Time", value: formatDuration(pacer.time))
             LabeledContent("Pace", value: formatPace(distance: pacer.distance, time: pacer.time))
         }
     }
@@ -182,16 +182,26 @@ struct ScheduledWorkoutDetailView: View {
             let measurement = Measurement(value: value, unit: unit)
             return formatMeasurement(measurement)
         case .time(let value, let unit):
-            let measurement = Measurement(value: value, unit: unit)
-            return formatMeasurement(measurement)
+            return formatDuration(Measurement(value: value, unit: unit))
         case .energy(let value, let unit):
             let measurement = Measurement(value: value, unit: unit)
             return formatMeasurement(measurement)
         case .poolSwimDistanceWithTime(let distance, let time):
-            return "\(formatMeasurement(distance)) in \(formatMeasurement(time))"
+            return "\(formatMeasurement(distance)) in \(formatDuration(time))"
         @unknown default:
             return "Unknown"
         }
+    }
+
+    /// Durations arrive from WorkoutKit in seconds; render them in the largest
+    /// sensible units ("20 min", "1 hr, 15 min") instead of "1,200 sec".
+    private func formatDuration(_ measurement: Measurement<UnitDuration>) -> String {
+        let seconds = measurement.converted(to: .seconds).value
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute, .second]
+        formatter.unitsStyle = .short
+        formatter.zeroFormattingBehavior = .dropAll
+        return formatter.string(from: seconds) ?? formatMeasurement(measurement)
     }
 
     private func formatMeasurement<T: Dimension>(_ measurement: Measurement<T>) -> String {
