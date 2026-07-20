@@ -31,6 +31,7 @@ final class SessionStore: ObservableObject {
     static let displayNameKey = "trainingAPIDisplayName" // UserDefaults
     static let roleKey = "trainingAPIRole"            // UserDefaults
     static let legacyKeyKey = "trainingAPIKey"        // legacy UserDefaults API key
+    static let onboardedKey = "hasCompletedOnboarding" // UserDefaults (@AppStorage in app root)
 
     init(apiClient: WorkoutAPIClient, workoutManager: WorkoutManager) {
         self.apiClient = apiClient
@@ -43,6 +44,13 @@ final class SessionStore: ObservableObject {
         displayName = defaults.string(forKey: Self.displayNameKey) ?? ""
         role = defaults.string(forKey: Self.roleKey) ?? ""
         isAuthenticated = !creds.token.isEmpty && !creds.serverURL.isEmpty
+
+        // A session restored from the Keychain means this account already used
+        // the app (e.g. a reinstall wiped UserDefaults but not the Keychain) —
+        // never re-run first-athlete onboarding for it.
+        if isAuthenticated {
+            defaults.set(true, forKey: Self.onboardedKey)
+        }
     }
 
     /// Whether we have a saved display name to show ("Signed in as …").
@@ -124,6 +132,16 @@ final class SessionStore: ObservableObject {
             role = user.role
         }
 
+        // An account that already has training plans is established — skip the
+        // first-athlete onboarding for it. Decided before `isAuthenticated`
+        // flips so the app root never flashes the onboarding branch. Best
+        // effort: on failure the flag stays false and onboarding (skippable)
+        // shows.
+        if !defaults.bool(forKey: Self.onboardedKey),
+           let plans = try? await apiClient.fetchAllPlans(), !plans.isEmpty {
+            defaults.set(true, forKey: Self.onboardedKey)
+        }
+
         self.serverURL = serverURL
         isAuthenticated = true
     }
@@ -133,6 +151,10 @@ final class SessionStore: ObservableObject {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: Self.tokenIdKey)
         defaults.removeObject(forKey: Self.legacyKeyKey)
+        // Reset onboarding so a different account signing in on this device is
+        // evaluated fresh (an established account re-skips it via the plan
+        // check on login).
+        defaults.removeObject(forKey: Self.onboardedKey)
         // Keep serverURL + username to prefill the login form on the way back in.
         displayName = ""
         role = ""
