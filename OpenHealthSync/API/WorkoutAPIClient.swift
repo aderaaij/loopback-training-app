@@ -6,10 +6,30 @@
 //
 
 import Foundation
+#if DEBUG
+import Pulse
+#endif
 
 actor WorkoutAPIClient {
     private var baseURL: URL
     private var apiKey: String
+
+    // Debug builds record every request with Pulse for on-device inspection
+    // (Settings → Network Log). The Authorization header is redacted before
+    // anything reaches the log store.
+    #if DEBUG
+    private nonisolated static let session: URLSession = {
+        var configuration = NetworkLogger.Configuration()
+        configuration.sensitiveHeaders = ["Authorization"]
+        return URLSession(
+            configuration: .default,
+            delegate: URLSessionProxyDelegate(logger: NetworkLogger(configuration: configuration)),
+            delegateQueue: nil
+        )
+    }()
+    #else
+    private nonisolated static let session = URLSession.shared
+    #endif
 
     var isConfigured: Bool { true }
 
@@ -80,7 +100,7 @@ actor WorkoutAPIClient {
             request.timeoutInterval = timeout
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.session.data(for: request)
 
         guard let http = response as? HTTPURLResponse else {
             throw WorkoutAPIError.invalidResponse

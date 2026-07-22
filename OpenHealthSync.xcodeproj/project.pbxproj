@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B273F6522F64AA0000D86611 /* Pulse in Frameworks */ = {isa = PBXBuildFile; productRef = B273F6512F64AA0000D86611 /* Pulse */; };
+		B273F6542F64AA0000D86611 /* PulseUI in Frameworks */ = {isa = PBXBuildFile; productRef = B273F6532F64AA0000D86611 /* PulseUI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		B273F6372F64920300D86611 /* OpenHealthSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHealthSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B273F6522F64AA0000D86611 /* Pulse in Frameworks */,
+				B273F6542F64AA0000D86611 /* PulseUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +84,10 @@
 				B273F6392F64920300D86611 /* OpenHealthSync */,
 			);
 			name = OpenHealthSync;
+			packageProductDependencies = (
+				B273F6512F64AA0000D86611 /* Pulse */,
+				B273F6532F64AA0000D86611 /* PulseUI */,
+			);
 			productName = OpenHealthSync;
 			productReference = B273F6372F64920300D86611 /* OpenHealthSync.app */;
 			productType = "com.apple.product-type.application";
@@ -105,6 +116,9 @@
 			);
 			mainGroup = B273F62E2F64920300D86611;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B273F6502F64AA0000D86611 /* XCRemoteSwiftPackageReference "Pulse" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B273F6382F64920300D86611 /* Products */;
 			projectDirPath = "";
@@ -348,6 +362,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B273F6502F64AA0000D86611 /* XCRemoteSwiftPackageReference "Pulse" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kean/Pulse";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.2.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B273F6512F64AA0000D86611 /* Pulse */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B273F6502F64AA0000D86611 /* XCRemoteSwiftPackageReference "Pulse" */;
+			productName = Pulse;
+		};
+		B273F6532F64AA0000D86611 /* PulseUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B273F6502F64AA0000D86611 /* XCRemoteSwiftPackageReference "Pulse" */;
+			productName = PulseUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 	};
 	rootObject = B273F62F2F64920300D86611 /* Project object */;

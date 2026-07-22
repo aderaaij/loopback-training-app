@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import PulseUI
+#endif
 
 struct ServerConfigView: View {
     enum Mode {
@@ -183,6 +186,7 @@ struct ServerConfigView: View {
             }
 
             #if DEBUG
+            networkLogSection
             developerSection
             #endif
 
@@ -196,6 +200,21 @@ struct ServerConfigView: View {
     }
 
     #if DEBUG
+    // MARK: - Network Log (debug builds only)
+
+    private var networkLogSection: some View {
+        Section {
+            NavigationLink("Network Log") {
+                ConsoleView(mode: .network)
+                    .closeButtonHidden()
+            }
+        } header: {
+            Text("Network")
+        } footer: {
+            Text("Debug builds only. Every Training API request is recorded on-device by Pulse, with the Authorization header redacted.")
+        }
+    }
+
     // MARK: - Developer (debug builds only)
 
     private var developerSection: some View {
