@@ -5,7 +5,9 @@
 //  Statistics and history for missed workout days: which weekdays
 //  get missed most, the reasons given at check-in, and the full
 //  check-in history. Older misses that no longer belong to the
-//  current plan live here instead of the Training list.
+//  current plan live here instead of the Training list. Embedded as
+//  the "Missed Days" segment of the Trends tab, which owns the
+//  navigation chrome.
 //
 
 import SwiftUI
@@ -114,9 +116,6 @@ struct MissedDayStatsView: View {
                 }
             }
         }
-        .lbScreen()
-        .navigationTitle("Missed Days")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $checkInWorkout) { workout in
             MissedWorkoutFeedbackFlow(
                 missedWorkouts: [workout],

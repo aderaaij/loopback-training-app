@@ -78,34 +78,34 @@ enum LBAppearance {
     static func apply() {
         LBFonts.register()
 
-        // Navigation bars
-        let nav = UINavigationBarAppearance()
-        nav.configureWithOpaqueBackground()
-        nav.backgroundColor = LB.uiBg
-        nav.shadowColor = .clear
-        nav.titleTextAttributes = [.foregroundColor: LB.uiCream]
-        nav.largeTitleTextAttributes = [
+        // Navigation bars: cream titles on the system treatment. At rest the
+        // bar is transparent so the warm-black screen shows through; once
+        // content scrolls underneath, the default material takes over. An
+        // opaque appearance here causes a dark cross-fade flash on push and
+        // the large title failing to redraw after popping an inline screen.
+        let titleAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: LB.uiCream]
+        let largeTitleAttributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: LB.uiCream,
             .font: UIFont.systemFont(ofSize: 34, weight: .bold)
         ]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-        UINavigationBar.appearance().compactAppearance = nav
+
+        let standard = UINavigationBarAppearance()
+        standard.configureWithDefaultBackground()
+        standard.titleTextAttributes = titleAttributes
+        standard.largeTitleTextAttributes = largeTitleAttributes
+
+        let edge = UINavigationBarAppearance()
+        edge.configureWithTransparentBackground()
+        edge.titleTextAttributes = titleAttributes
+        edge.largeTitleTextAttributes = largeTitleAttributes
+
+        UINavigationBar.appearance().standardAppearance = standard
+        UINavigationBar.appearance().scrollEdgeAppearance = edge
         UINavigationBar.appearance().tintColor = LB.uiAccent
 
-        // Tab bar
-        let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = LB.uiBg
-        tab.shadowColor = .clear
-        let item = tab.stackedLayoutAppearance
-        item.selected.iconColor = LB.uiAccent
-        item.selected.titleTextAttributes = [.foregroundColor: LB.uiAccent]
-        item.normal.iconColor = LB.uiTertiary
-        item.normal.titleTextAttributes = [.foregroundColor: LB.uiTertiary]
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-        UITabBar.appearance().tintColor = LB.uiAccent
+        // The tab bar keeps the system Liquid Glass treatment — an opaque
+        // UITabBarAppearance here would flatten the floating bar. Selection
+        // color comes from the app-level .tint(LB.accent).
     }
 }
 

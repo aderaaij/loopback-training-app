@@ -39,8 +39,8 @@ struct PlansListView: View {
             section(for: .completed)
             section(for: .archived)
         }
+        .lbList()
         .navigationTitle("Plans")
-        .navigationBarTitleDisplayMode(.inline)
         .task {
             if scheduleManager.allPlans.isEmpty {
                 await scheduleManager.loadAllPlans()
@@ -68,7 +68,7 @@ struct PlansListView: View {
     private func section(for lifecycle: PlanLifecycle) -> some View {
         let group = plans(lifecycle)
         if !group.isEmpty {
-            Section(lifecycle.label) {
+            Section {
                 ForEach(group) { plan in
                     NavigationLink {
                         PlanDetailView(plan: plan, scheduleManager: scheduleManager)
@@ -76,7 +76,10 @@ struct PlansListView: View {
                         PlanRow(plan: plan)
                     }
                 }
+            } header: {
+                LBSectionHeader(title: lifecycle.label)
             }
+            .listRowBackground(LB.surface)
         }
     }
 }
@@ -87,29 +90,30 @@ struct PlanRow: View {
     let plan: TrainingPlan
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 13) {
             Image(systemName: PlanFormat.icon(for: plan.activityType))
-                .font(.title3)
+                .font(.system(size: 18))
                 .foregroundStyle(plan.isStrength ? LB.violet : LB.blue)
-                .frame(width: 24)
+                .frame(width: 40, height: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.surfaceTile)
+                )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(plan.name)
-                    .font(.subheadline.weight(.medium))
+                    .font(.lbDisplay(15, .semibold))
+                    .foregroundStyle(LB.textPrimary)
                     .lineLimit(1)
                 if let dateRange = PlanFormat.dateRange(plan) {
                     Text(dateRange)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.lbMono(11))
+                        .foregroundStyle(LB.textTertiary)
                 }
             }
 
             Spacer()
 
-            Text(trailingDetail)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+            LBStatusChip(text: trailingDetail, color: chipColor)
         }
         .padding(.vertical, 2)
     }
@@ -128,14 +132,23 @@ struct PlanRow: View {
             return "Upcoming"
         case .completed:
             if let progress = plan.progress, progress.runsTotal > 0 {
-                return "✓ \(progress.runsCompleted)/\(progress.runsTotal)"
+                return "\(progress.runsCompleted)/\(progress.runsTotal) done"
             }
-            return "✓ Done"
+            return "Done"
         case .archived:
             if let total = plan.totalWeeks {
                 return "\(total) wk"
             }
             return "Archived"
+        }
+    }
+
+    private var chipColor: Color {
+        switch plan.lifecycle {
+        case .current: LB.accent
+        case .upcoming: LB.blue
+        case .completed: LB.green
+        case .archived: LB.textMuted
         }
     }
 }
@@ -181,11 +194,14 @@ struct PlanDetailView: View {
             }
 
             if let goals = plan.metadata?.goals, !goals.isEmpty {
-                Section("Goals") {
+                Section {
                     ForEach(Array(goals.enumerated()), id: \.offset) { _, goal in
                         GoalRow(goal: goal)
                     }
+                } header: {
+                    LBSectionHeader(title: "Goals")
                 }
+                .listRowBackground(LB.surface)
             }
 
             if let schedule = planSchedule?.schedule ?? plan.metadata?.schedule {
@@ -194,20 +210,24 @@ struct PlanDetailView: View {
                         CadenceRow(weekday: day.weekday, routine: day.routine)
                     }
                 } header: {
-                    Text("Weekly Cadence")
+                    LBSectionHeader(title: "Weekly Cadence")
                 } footer: {
                     if let horizonText {
                         Text(horizonText)
                     }
                 }
+                .listRowBackground(LB.surface)
             }
 
             if let sessions = planSchedule?.sessions, !sessions.isEmpty {
-                Section("Sessions (\(sessions.count))") {
+                Section {
                     ForEach(sessions) { session in
                         ScheduleSessionRow(session: session)
                     }
+                } header: {
+                    LBSectionHeader(title: "Sessions (\(sessions.count))")
                 }
+                .listRowBackground(LB.surface)
             }
 
             if isLoading {
@@ -215,26 +235,34 @@ struct PlanDetailView: View {
                     HStack(spacing: 12) {
                         ProgressView().controlSize(.small)
                         Text("Loading workouts…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.lbBody(13))
+                            .foregroundStyle(LB.textSecondary)
                     }
                 }
+                .listRowBackground(LB.surface)
             } else if !sortedWorkouts.isEmpty {
-                Section("Workouts (\(sortedWorkouts.count))") {
+                Section {
                     ForEach(sortedWorkouts) { workout in
                         PlanWorkoutRow(workout: workout)
                     }
+                } header: {
+                    LBSectionHeader(title: "Workouts (\(sortedWorkouts.count))")
                 }
+                .listRowBackground(LB.surface)
             }
 
             if let background = plan.metadata?.background, !background.isEmpty {
-                Section("Background") {
+                Section {
                     Text(background)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.lbBody(13))
+                        .foregroundStyle(LB.textSecondary)
+                } header: {
+                    LBSectionHeader(title: "Background")
                 }
+                .listRowBackground(LB.surface)
             }
         }
+        .lbList()
         .navigationTitle(plan.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -265,9 +293,10 @@ private struct GoalRow: View {
         HStack(spacing: 8) {
             Image(systemName: "target")
                 .font(.caption)
-                .foregroundStyle(.blue)
+                .foregroundStyle(LB.blue)
             Text(text)
-                .font(.subheadline)
+                .font(.lbBody(13, .medium))
+                .foregroundStyle(LB.textPrimary)
             Spacer()
         }
     }
@@ -293,15 +322,16 @@ private struct CadenceRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(weekday.capitalized)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            Text(weekday.prefix(3).uppercased())
+                .font(.lbMono(11, .semibold))
+                .foregroundStyle(LB.textTertiary)
                 .frame(width: 40, alignment: .leading)
             Image(systemName: "dumbbell.fill")
                 .font(.caption)
                 .foregroundStyle(LB.violet)
             Text(routine.title)
-                .font(.subheadline)
+                .font(.lbBody(13, .medium))
+                .foregroundStyle(LB.textPrimary)
             Spacer()
         }
     }
@@ -319,15 +349,15 @@ private struct ScheduleSessionRow: View {
         HStack(spacing: 10) {
             Image(systemName: "dumbbell.fill")
                 .font(.caption)
-                .foregroundStyle(isPast ? Color.secondary.opacity(0.4) : LB.violet)
-            VStack(alignment: .leading, spacing: 2) {
+                .foregroundStyle(isPast ? LB.textFaint : LB.violet)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(session.title)
-                    .font(.subheadline)
-                    .foregroundStyle(isPast ? .secondary : .primary)
+                    .font(.lbBody(13, .medium))
+                    .foregroundStyle(isPast ? LB.textTertiary : LB.textPrimary)
                 if let day = session.day {
                     Text(PlanFormat.medium.string(from: day))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.lbMono(11))
+                        .foregroundStyle(LB.textTertiary)
                 }
                 if session.conflict {
                     let overlaps = session.conflictsWith?.joined(separator: ", ")
@@ -335,7 +365,7 @@ private struct ScheduleSessionRow: View {
                         overlaps.map { "Overlaps \($0)" } ?? "Overlaps a scheduled run",
                         systemImage: "exclamationmark.triangle.fill"
                     )
-                    .font(.caption)
+                    .font(.lbBody(11))
                     .foregroundStyle(LB.amber)
                 }
             }
@@ -353,15 +383,15 @@ private struct PlanWorkoutRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(isCompleted ? Color.green : Color.secondary.opacity(0.4))
-            VStack(alignment: .leading, spacing: 2) {
+                .foregroundStyle(isCompleted ? LB.green : LB.textFaint)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(workout.title)
-                    .font(.subheadline)
-                    .foregroundStyle(isCompleted ? .primary : .secondary)
+                    .font(.lbBody(13, .medium))
+                    .foregroundStyle(isCompleted ? LB.textPrimary : LB.textSecondary)
                 if let date = workout.scheduledDate {
                     Text(PlanFormat.medium.string(from: date))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.lbMono(11))
+                        .foregroundStyle(LB.textTertiary)
                 }
             }
             Spacer()

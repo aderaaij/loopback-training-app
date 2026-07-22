@@ -12,15 +12,45 @@ import SwiftUI
 
 struct TrendsView: View {
     let apiClient: WorkoutAPIClient
+    var missedWorkoutDetector: MissedWorkoutDetector
 
     private enum LoadState {
         case loading, loaded, failed
     }
 
+    private enum Segment {
+        case mileage, missed
+    }
+
     @State private var rows: [ServerWorkoutSummaryRow] = []
     @State private var loadState: LoadState = .loading
+    @State private var segment: Segment = .mileage
 
     var body: some View {
+        Group {
+            switch segment {
+            case .mileage:
+                mileageContent
+            case .missed:
+                MissedDayStatsView(detector: missedWorkoutDetector)
+            }
+        }
+        .lbScreen()
+        .navigationTitle("Trends")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Section", selection: $segment) {
+                    Text("Mileage").tag(Segment.mileage)
+                    Text("Missed Days").tag(Segment.missed)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
+        }
+        .task { await load() }
+    }
+
+    private var mileageContent: some View {
         Group {
             switch loadState {
             case .loading:
@@ -41,10 +71,6 @@ struct TrendsView: View {
                 }
             }
         }
-        .lbScreen()
-        .navigationTitle("Trends")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
     }
 
     private func load() async {

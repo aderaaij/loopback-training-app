@@ -21,7 +21,6 @@ struct LoopbackApp: App {
 
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
     @AppStorage("healthMetricsSyncEnabled") private var healthMetricsSyncEnabled: Bool = true
-    @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
     @Environment(\.scenePhase) private var scenePhase
