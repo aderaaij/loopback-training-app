@@ -88,7 +88,20 @@ struct StrengthCycleCard: View {
         NavigationLink {
             PlanDetailView(plan: plan, scheduleManager: scheduleManager)
         } label: {
-            HStack(spacing: 13) {
+            StrengthCycleCardLabel(plan: plan)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The card's visual content, separate from navigation so List rows can pair
+/// it with a hidden NavigationLink — a visible link as row content would get
+/// the List's own chevron and link styling on top of the card's.
+struct StrengthCycleCardLabel: View {
+    let plan: TrainingPlan
+
+    var body: some View {
+        HStack(spacing: 13) {
                 Image(systemName: "dumbbell.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(LB.violet)
@@ -123,11 +136,9 @@ struct StrengthCycleCard: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LB.textMuted)
                 }
-            }
-            .padding(14)
-            .lbCard()
         }
-        .buttonStyle(.plain)
+        .padding(14)
+        .lbCard()
     }
 
     /// The cycle-horizon cue: how long until the cycle ends, or the nudge to

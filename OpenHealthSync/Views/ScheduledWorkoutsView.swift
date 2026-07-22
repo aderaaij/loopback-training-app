@@ -34,15 +34,14 @@ struct TrainingTabView: View {
         onboardingSeededGoal && !onboardingNudgeDismissed && scheduleManager.activePlan == nil
     }
 
-    private var isSyncing: Bool {
-        switch scheduleManager.refreshState {
-        case .syncing, .scheduling: true
-        default: false
-        }
-    }
-
     private var startOfToday: Date {
         Calendar.current.startOfDay(for: Date())
+    }
+
+    /// Whether the list's hero section leads with the run plan card (or its
+    /// loading placeholder) — the strength card only needs a gap above it then.
+    private var hasRunPlanCard: Bool {
+        scheduleManager.activePlan != nil || scheduleManager.isLoadingPlan
     }
 
     private var upcomingWorkouts: [ScheduledWorkoutPlan] {
@@ -74,18 +73,10 @@ struct TrainingTabView: View {
     }
 
     /// Misses that still belong to the active plan get an inline section;
-    /// everything older lives in MissedDayStatsView.
+    /// everything older lives in the Trends tab's Missed Days segment.
     private var missedCurrentPlanWorkouts: [ScheduledWorkoutPlan] {
         let currentPlanIds = Set(scheduleManager.planWorkouts.map(\.id))
         return missedWorkoutsInList.filter { currentPlanIds.contains($0.plan.id) }
-    }
-
-    private var earlierMissedCount: Int {
-        missedWorkoutsInList.count - missedCurrentPlanWorkouts.count
-    }
-
-    private var hasMissedHistory: Bool {
-        earlierMissedCount > 0 || !feedbackEntries.isEmpty
     }
 
     private var completedWorkouts: [ScheduledWorkoutPlan] {
@@ -102,15 +93,20 @@ struct TrainingTabView: View {
         workoutManager.allWorkouts.sorted { $0.startDate > $1.startDate }
     }
 
-    /// Upcoming display-only strength sessions from the unified calendar.
-    private var upcomingStrengthSessions: [CalendarEntry] {
+    /// Display-only strength sessions from the unified calendar: everything
+    /// upcoming plus completed ones (which keep their ✓), so a finished
+    /// session doesn't vanish from the list.
+    private var strengthSessions: [CalendarEntry] {
         scheduleManager.calendarEntries
-            .filter { $0.kind == .strength && !$0.completed && ($0.day ?? .distantPast) >= startOfToday }
+            .filter { $0.kind == .strength && ($0.completed || ($0.day ?? .distantPast) >= startOfToday) }
             .sorted { $0.date < $1.date }
     }
 
     var body: some View {
-        Group {
+        // ZStack (not Group): modifiers on a Group attach to the active switch
+        // branch, so toggling modes rebuilt the toolbar and its glass
+        // containers flashed square. A ZStack keeps the toolbar's host stable.
+        ZStack {
             switch viewMode {
             case .timeline:
                 TrainingCalendarView(
@@ -152,37 +148,51 @@ struct TrainingTabView: View {
                         }
                     }
 
-                    if let plan = scheduleManager.activePlan {
+                    // Both hero cards share one section: separate sections
+                    // would put the List's section spacing between them,
+                    // wider than the timeline's 16pt gap.
+                    if hasRunPlanCard || scheduleManager.activeStrengthPlan != nil {
                         Section {
-                            PlanOverviewCard(
-                                plan: plan,
-                                planWorkouts: scheduleManager.planWorkouts,
-                                scheduledWorkouts: scheduleManager.scheduledWorkouts
-                            )
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                        }
-                    } else if scheduleManager.isLoadingPlan {
-                        Section {
-                            PlanLoadingPlaceholder()
+                            if let plan = scheduleManager.activePlan {
+                                PlanOverviewCard(
+                                    plan: plan,
+                                    planWorkouts: scheduleManager.planWorkouts,
+                                    scheduledWorkouts: scheduleManager.scheduledWorkouts
+                                )
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
-                        }
-                    }
+                            } else if scheduleManager.isLoadingPlan {
+                                PlanLoadingPlaceholder()
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                            }
 
-                    if let strengthPlan = scheduleManager.activeStrengthPlan {
-                        Section {
-                            StrengthCycleCard(plan: strengthPlan, scheduleManager: scheduleManager)
+                            if let strengthPlan = scheduleManager.activeStrengthPlan {
+                                // Hidden-link overlay: a visible NavigationLink
+                                // as row content would get the List's own
+                                // chevron on top of the card's, diverging from
+                                // the timeline.
+                                ZStack {
+                                    NavigationLink {
+                                        PlanDetailView(plan: strengthPlan, scheduleManager: scheduleManager)
+                                    } label: {
+                                        EmptyView()
+                                    }
+                                    .opacity(0)
+                                    StrengthCycleCardLabel(plan: strengthPlan)
+                                }
+                                .padding(.top, hasRunPlanCard ? 16 : 0)
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
+                            }
                         }
                     }
 
                     if !upcomingWorkouts.isEmpty {
-                        Section("Upcoming Workouts") {
+                        Section {
                             ForEach(upcomingWorkouts, id: \.self) { scheduled in
                                 NavigationLink {
                                     ScheduledWorkoutDetailView(scheduled: scheduled)
@@ -190,13 +200,16 @@ struct TrainingTabView: View {
                                     ScheduledWorkoutRow(scheduled: scheduled)
                                 }
                             }
+                        } header: {
+                            LBSectionHeader(title: "Upcoming Workouts")
                         }
+                        .listRowBackground(LB.surface)
                     }
 
                     // Only misses from the active plan stay inline; older ones
                     // are reachable through the Missed Days stats screen below.
                     if !missedCurrentPlanWorkouts.isEmpty {
-                        Section("Missed") {
+                        Section {
                             ForEach(missedCurrentPlanWorkouts, id: \.self) { scheduled in
                                 if let feedback = existingFeedback(for: scheduled.plan.id) {
                                     // Already checked in — show reason and action
@@ -230,30 +243,26 @@ struct TrainingTabView: View {
                                     }
                                 }
                             }
+                        } header: {
+                            LBSectionHeader(title: "Missed")
                         }
-                    }
-
-                    if hasMissedHistory {
-                        Section {
-                            NavigationLink {
-                                MissedDayStatsView(detector: missedWorkoutDetector)
-                            } label: {
-                                MissedDaysLinkRow(earlierMissedCount: earlierMissedCount)
-                            }
-                        }
+                        .listRowBackground(LB.surface)
                     }
 
                     // Display-only Hevy sessions — never enqueued to the watch.
-                    if !upcomingStrengthSessions.isEmpty {
-                        Section("Strength Sessions") {
-                            ForEach(upcomingStrengthSessions) { entry in
+                    if !strengthSessions.isEmpty {
+                        Section {
+                            ForEach(strengthSessions) { entry in
                                 StrengthSessionRow(entry: entry, showsDate: true)
                             }
+                        } header: {
+                            LBSectionHeader(title: "Strength Sessions")
                         }
+                        .listRowBackground(LB.surface)
                     }
 
                     if !completedWorkouts.isEmpty {
-                        Section("Completed Workouts") {
+                        Section {
                             ForEach(completedWorkouts, id: \.self) { scheduled in
                                 NavigationLink {
                                     ScheduledWorkoutDetailView(scheduled: scheduled)
@@ -261,11 +270,14 @@ struct TrainingTabView: View {
                                     ScheduledWorkoutRow(scheduled: scheduled)
                                 }
                             }
+                        } header: {
+                            LBSectionHeader(title: "Completed Workouts")
                         }
+                        .listRowBackground(LB.surface)
                     }
 
                     if !pastWorkouts.isEmpty {
-                        Section("Past Workouts") {
+                        Section {
                             ForEach(pastWorkouts.prefix(pastWorkoutsLimit)) { summary in
                                 NavigationLink {
                                     WorkoutDetailView(
@@ -284,28 +296,24 @@ struct TrainingTabView: View {
                                     pastWorkoutsLimit += 10
                                 } label: {
                                     Text("Show More (\(pastWorkouts.count - pastWorkoutsLimit) remaining)")
-                                        .font(.subheadline)
+                                        .font(.lbBody(13, .medium))
                                         .frame(maxWidth: .infinity)
                                 }
                             }
+                        } header: {
+                            LBSectionHeader(title: "Past Workouts")
                         }
+                        .listRowBackground(LB.surface)
                     }
                 }
                 .lbList()
             }
         }
         .navigationTitle("Training")
+        .refreshable {
+            await scheduleManager.refreshFromServer(modelContext: modelContext)
+        }
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    Task {
-                        await scheduleManager.refreshFromServer(modelContext: modelContext)
-                    }
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                }
-                .disabled(isSyncing)
-            }
             // Silent while healthy; a warning dot when the server is
             // unreachable or the session died. Details live in Settings.
             ToolbarItem(placement: .navigationBarLeading) {
@@ -318,23 +326,6 @@ struct TrainingTabView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 120)
-            }
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                NavigationLink {
-                    TrendsView(apiClient: workoutManager.apiClient)
-                } label: {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                }
-                NavigationLink {
-                    MissedDayStatsView(detector: missedWorkoutDetector)
-                } label: {
-                    Image(systemName: "chart.bar.xaxis")
-                }
-                NavigationLink {
-                    PlansListView(scheduleManager: scheduleManager)
-                } label: {
-                    Image(systemName: "calendar.badge.clock")
-                }
             }
         }
         .sheet(item: $feedbackWorkout) { workout in
@@ -392,38 +383,6 @@ struct TrainingTabView: View {
         @unknown default:
             return "Workout"
         }
-    }
-}
-
-// MARK: - Missed Days link row
-
-struct MissedDaysLinkRow: View {
-    let earlierMissedCount: Int
-
-    var body: some View {
-        HStack(spacing: 13) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 18))
-                .foregroundStyle(LB.amber)
-                .frame(width: 40, height: 40)
-                .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.surfaceTile)
-                )
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Missed days")
-                    .font(.lbDisplay(15, .semibold))
-                    .foregroundStyle(LB.textPrimary)
-                Text(earlierMissedCount > 0
-                     ? "\(earlierMissedCount) from earlier plans · stats & history"
-                     : "Stats & history")
-                    .font(.lbMono(11))
-                    .foregroundStyle(LB.textTertiary)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, 2)
     }
 }
 
