@@ -306,6 +306,11 @@ struct TrainingTabView: View {
                 }
                 .disabled(isSyncing)
             }
+            // Silent while healthy; a warning dot when the server is
+            // unreachable or the session died. Details live in Settings.
+            ToolbarItem(placement: .navigationBarLeading) {
+                ServerStatusToolbarDot()
+            }
             ToolbarItem(placement: .principal) {
                 Picker("View Mode", selection: $viewMode) {
                     Image(systemName: "calendar").tag(ViewMode.timeline)

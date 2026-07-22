@@ -160,6 +160,10 @@ final class SessionStore: ObservableObject {
         let apiClient = self.apiClient
         Task { await apiClient.clearCache() }
 
+        // The status dot should not keep reporting on a connection that no
+        // longer exists.
+        ServerStatusMonitor.shared.reset()
+
         Keychain.delete(Self.tokenKey)
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: Self.tokenIdKey)

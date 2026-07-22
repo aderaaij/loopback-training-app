@@ -105,12 +105,24 @@ actor WorkoutAPIClient {
             request.timeoutInterval = timeout
         }
 
-        let (data, response) = try await Self.session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(for: request)
+        } catch {
+            Self.reportStatus(.connectionError)
+            throw error
+        }
 
         guard let http = response as? HTTPURLResponse else {
+            Self.reportStatus(.connectionError)
             throw WorkoutAPIError.invalidResponse
         }
         let code = http.statusCode
+        // Any HTTP response proves the server is reachable; only a genuine
+        // dead session (not a candidate-credential probe) downgrades to
+        // authenticationError.
+        Self.reportStatus(code == 401 && signalsUnauthorized ? .authenticationError : .connected)
         if (200...299).contains(code) || extraOK.contains(code) {
             return (data, code)
         }
@@ -119,6 +131,13 @@ actor WorkoutAPIClient {
             throw WorkoutAPIError.unauthorized
         }
         throw WorkoutAPIError.serverError(code)
+    }
+
+    /// Fire-and-forget hop to the main actor so publishing never delays a request.
+    private nonisolated static func reportStatus(_ status: ServerStatus) {
+        Task { @MainActor in
+            ServerStatusMonitor.shared.record(status)
+        }
     }
 
     /// `perform` + decode with the shared ISO-8601 decoder. When `cacheKey` is

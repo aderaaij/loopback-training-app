@@ -101,6 +101,7 @@ struct ServerConfigView: View {
                         Text(session.accountLabel)
                             .foregroundStyle(.secondary)
                     }
+                    ServerStatusRow()
                     if !session.serverURL.isEmpty {
                         HStack {
                             Text("Server")
