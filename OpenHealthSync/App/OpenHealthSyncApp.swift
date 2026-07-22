@@ -33,15 +33,20 @@ struct LoopbackApp: App {
         // Resolve the current credentials (migrating any legacy API key into the
         // Keychain) so the live clients are configured synchronously at launch.
         let creds = SessionStore.resolveCredentials()
+        let alternativeURL = SessionStore.storedAlternativeURL?.absoluteString
 
-        let client = WorkoutAPIClient(baseURL: creds.serverURL, apiKey: creds.token)
+        let client = WorkoutAPIClient(
+            baseURL: creds.serverURL,
+            alternativeURL: alternativeURL,
+            apiKey: creds.token
+        )
         self.apiClient = client
 
         let syncer = HealthMetricsSyncer(apiClient: client)
         self.healthMetricsSyncer = syncer
 
         let wm = WorkoutManager()
-        wm.configure(serverURL: creds.serverURL, apiKey: creds.token)
+        wm.configure(serverURL: creds.serverURL, alternativeURL: alternativeURL, apiKey: creds.token)
         let sm = WorkoutScheduleManager(apiClient: client)
         wm.scheduleManager = sm
         let nm = NotificationManager()

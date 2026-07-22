@@ -26,13 +26,17 @@ class WorkoutManager: ObservableObject {
 
     // MARK: - Configuration
 
-    func configure(serverURL: String, apiKey: String) {
+    func configure(serverURL: String, alternativeURL: String? = nil, apiKey: String) {
         let trimmed = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: normalizeURL(trimmed)) else {
             return
         }
         Task {
-            await apiClient.configure(baseURL: url, apiKey: apiKey)
+            await apiClient.configure(
+                baseURL: url,
+                alternativeURL: alternativeURL.flatMap { URL(string: $0) },
+                apiKey: apiKey
+            )
         }
     }
 

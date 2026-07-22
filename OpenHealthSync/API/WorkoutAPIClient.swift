@@ -6,13 +6,34 @@
 //
 
 import Foundation
+import Network
+import os
+import Synchronization
 #if DEBUG
 import Pulse
 #endif
 
 actor WorkoutAPIClient {
     private var baseURL: URL
+    private var alternativeURL: URL?
     private var apiKey: String
+
+    // Which of primary/alternative the last successful request used. Shared
+    // across client instances — the upload client and the main client talk to
+    // the same server, so a working route found by one redirects the other.
+    private nonisolated static let prefersAlternative = Mutex(false)
+
+    // A network-path change (Wi-Fi ↔ cellular, VPN up or down) makes the
+    // primary URL worth trying again; the next request re-discovers the
+    // working route, failing over again if the primary is still down.
+    private nonisolated static let pathMonitor: NWPathMonitor = {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { _ in
+            WorkoutAPIClient.prefersAlternative.withLock { $0 = false }
+        }
+        monitor.start(queue: DispatchQueue(label: "server-path-monitor"))
+        return monitor
+    }()
 
     // Debug builds record every request with Pulse for on-device inspection
     // (Settings → Network Log). This must be Pulse's URLSessionProxy, not a
@@ -53,13 +74,16 @@ actor WorkoutAPIClient {
         return encoder
     }()
 
-    init(baseURL: String? = nil, apiKey: String? = nil) {
+    init(baseURL: String? = nil, alternativeURL: String? = nil, apiKey: String? = nil) {
         self.baseURL = URL(string: baseURL ?? "") ?? URL(string: "https://localhost")!
+        self.alternativeURL = alternativeURL.flatMap { URL(string: $0) }
         self.apiKey = apiKey ?? ""
+        _ = Self.pathMonitor // start route re-discovery on path changes
     }
 
-    func configure(baseURL: URL, apiKey: String) {
+    func configure(baseURL: URL, alternativeURL: URL?, apiKey: String) {
         self.baseURL = baseURL
+        self.alternativeURL = alternativeURL
         self.apiKey = apiKey
     }
 
@@ -85,30 +109,59 @@ actor WorkoutAPIClient {
         on overrideURL: URL? = nil,
         authenticated: Bool = true
     ) async throws -> (data: Data, status: Int) {
-        var url = (overrideURL ?? baseURL).appendingPathComponent(path)
-        if !query.isEmpty {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = query
-            url = components.url!
+        func makeRequest(on base: URL) -> URLRequest {
+            var url = base.appendingPathComponent(path)
+            if !query.isEmpty {
+                var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+                components.queryItems = query
+                url = components.url!
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            if authenticated {
+                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            }
+            if let body {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = body
+            }
+            if let timeout {
+                request.timeoutInterval = timeout
+            }
+            return request
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        if authenticated {
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        }
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = body
-        }
-        if let timeout {
-            request.timeoutInterval = timeout
+        // Route selection: an explicit override (login probing a candidate
+        // URL) never fails over; otherwise start from whichever of
+        // primary/alternative last worked and keep the other as the one-shot
+        // retry candidate.
+        let first: URL
+        var second: URL?
+        var usedAlternative = false
+        if let overrideURL {
+            first = overrideURL
+        } else if let alternativeURL, Self.prefersAlternative.withLock({ $0 }) {
+            first = alternativeURL
+            second = baseURL
+            usedAlternative = true
+        } else {
+            first = baseURL
+            second = alternativeURL
         }
 
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await Self.session.data(for: request)
+            do {
+                (data, response) = try await Self.session.data(for: makeRequest(on: first))
+            } catch let error where second != nil && Self.shouldFailover(on: error) {
+                let fallback = second!
+                AppLog.sync.warning("Request to \(first.absoluteString, privacy: .public) failed (\(error.localizedDescription, privacy: .public)); retrying on \(fallback.absoluteString, privacy: .public)")
+                (data, response) = try await Self.session.data(for: makeRequest(on: fallback))
+                usedAlternative.toggle()
+                Self.prefersAlternative.withLock { $0 = usedAlternative }
+                AppLog.sync.info("Failover succeeded; preferring \(fallback.absoluteString, privacy: .public) until the network path changes")
+            }
         } catch {
             Self.reportStatus(.connectionError)
             throw error
@@ -122,7 +175,10 @@ actor WorkoutAPIClient {
         // Any HTTP response proves the server is reachable; only a genuine
         // dead session (not a candidate-credential probe) downgrades to
         // authenticationError.
-        Self.reportStatus(code == 401 && signalsUnauthorized ? .authenticationError : .connected)
+        Self.reportStatus(
+            code == 401 && signalsUnauthorized ? .authenticationError : .connected,
+            viaFallback: usedAlternative
+        )
         if (200...299).contains(code) || extraOK.contains(code) {
             return (data, code)
         }
@@ -133,10 +189,23 @@ actor WorkoutAPIClient {
         throw WorkoutAPIError.serverError(code)
     }
 
+    /// Transport failures that can plausibly be route-specific — a hostname
+    /// that only resolves on one network, a VPN that's down — and therefore
+    /// worth one retry on the other URL. Anything else fails as usual.
+    private nonisolated static func shouldFailover(on error: Error) -> Bool {
+        switch (error as? URLError)?.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+             .networkConnectionLost, .notConnectedToInternet, .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Fire-and-forget hop to the main actor so publishing never delays a request.
-    private nonisolated static func reportStatus(_ status: ServerStatus) {
+    private nonisolated static func reportStatus(_ status: ServerStatus, viaFallback: Bool = false) {
         Task { @MainActor in
-            ServerStatusMonitor.shared.record(status)
+            ServerStatusMonitor.shared.record(status, viaFallback: viaFallback)
         }
     }
 

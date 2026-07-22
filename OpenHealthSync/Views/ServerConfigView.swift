@@ -32,6 +32,7 @@ struct ServerConfigView: View {
 
     // Persisted config
     @AppStorage("trainingAPIBaseURL") private var storedBaseURL: String = ""
+    @AppStorage("trainingAPIAlternativeURL") private var alternativeURLText: String = ""
     @AppStorage("trainingAPIKey") private var storedAPIKey: String = ""
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
     @AppStorage("healthMetricsSyncEnabled") private var healthMetricsSyncEnabled: Bool = true
@@ -59,6 +60,11 @@ struct ServerConfigView: View {
         .onChange(of: trainingScheme) { _, _ in resetStatus() }
         .onChange(of: trainingHost) { _, _ in resetStatus() }
         .onChange(of: trainingAPIKey) { _, _ in resetStatus() }
+        .onChange(of: alternativeURLText) { _, _ in
+            // Push the new fallback route to the live clients immediately;
+            // @AppStorage already persisted the text.
+            Task { await session?.applyAlternativeURL() }
+        }
     }
 
     // MARK: - Onboarding
@@ -128,6 +134,17 @@ struct ServerConfigView: View {
 
                     connectionStatusRow
                 }
+            }
+
+            Section {
+                TextField("Fallback URL (optional)", text: $alternativeURLText)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Fallback Server")
+            } footer: {
+                Text("Second route to the same server — e.g. its LAN address when the primary URL goes through Tailscale. When the primary can't be reached, requests retry here automatically. Include the scheme, like http://192.168.1.20:8000.")
             }
 
             Section("Health Metrics") {

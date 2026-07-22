@@ -26,6 +26,7 @@ final class SessionStore: ObservableObject {
 
     static let tokenKey = "trainingAPIToken"          // Keychain
     static let baseURLKey = "trainingAPIBaseURL"      // UserDefaults
+    static let alternativeURLKey = "trainingAPIAlternativeURL" // UserDefaults
     static let tokenIdKey = "trainingAPITokenId"      // UserDefaults
     static let usernameKey = "trainingAPIUsername"    // UserDefaults
     static let displayNameKey = "trainingAPIDisplayName" // UserDefaults
@@ -180,8 +181,30 @@ final class SessionStore: ObservableObject {
 
     private func configureClients(serverURL: String, token: String) async {
         let url = URL(string: serverURL) ?? URL(string: "https://localhost")!
-        await apiClient.configure(baseURL: url, apiKey: token)
-        workoutManager?.configure(serverURL: serverURL, apiKey: token)
+        let alternative = Self.storedAlternativeURL
+        await apiClient.configure(baseURL: url, alternativeURL: alternative, apiKey: token)
+        workoutManager?.configure(
+            serverURL: serverURL,
+            alternativeURL: alternative?.absoluteString,
+            apiKey: token
+        )
+    }
+
+    /// Re-pushes the current configuration after the Settings fallback-URL
+    /// field changes, so the new route applies without a sign-out.
+    func applyAlternativeURL() async {
+        guard isAuthenticated else { return }
+        let creds = Self.resolveCredentials()
+        await configureClients(serverURL: creds.serverURL, token: creds.token)
+    }
+
+    /// The optional fallback URL, normalized; nil when unset. The Settings
+    /// field stores the raw text as typed (so editing round-trips), which is
+    /// why normalization happens here at read time.
+    static var storedAlternativeURL: URL? {
+        guard let raw = UserDefaults.standard.string(forKey: alternativeURLKey) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : normalizedURL(trimmed)
     }
 
     // MARK: - Credential resolution (also runs one-time migration)

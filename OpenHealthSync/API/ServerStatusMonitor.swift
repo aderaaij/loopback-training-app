@@ -26,10 +26,12 @@ final class ServerStatusMonitor: ObservableObject {
     static let shared = ServerStatusMonitor()
 
     @Published private(set) var status: ServerStatus = .unknown
+    /// Whether the last request went through the alternative (fallback) URL.
+    @Published private(set) var viaFallback = false
 
-    func record(_ status: ServerStatus) {
-        guard status != self.status else { return }
-        self.status = status
+    func record(_ status: ServerStatus, viaFallback: Bool = false) {
+        if status != self.status { self.status = status }
+        if viaFallback != self.viaFallback { self.viaFallback = viaFallback }
     }
 
     /// Called when the session ends or the server changes; the next request
@@ -81,7 +83,9 @@ struct ServerStatusRow: View {
             Text("Status")
             Spacer()
             ServerStatusDot(status: monitor.status)
-            Text(monitor.status.label)
+            Text(monitor.status == .connected && monitor.viaFallback
+                ? "Connected via fallback"
+                : monitor.status.label)
                 .foregroundStyle(.secondary)
         }
     }
