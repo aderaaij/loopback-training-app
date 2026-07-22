@@ -9,15 +9,16 @@
 //
 
 import Foundation
-import Combine
+import Observation
 
 @MainActor
-final class SessionStore: ObservableObject {
-    @Published private(set) var isAuthenticated = false
-    @Published private(set) var serverURL = ""
-    @Published private(set) var username = ""
-    @Published private(set) var displayName = ""
-    @Published private(set) var role = ""
+@Observable
+final class SessionStore {
+    private(set) var isAuthenticated = false
+    private(set) var serverURL = ""
+    private(set) var username = ""
+    private(set) var displayName = ""
+    private(set) var role = ""
 
     private let apiClient: WorkoutAPIClient
     private weak var workoutManager: WorkoutManager?

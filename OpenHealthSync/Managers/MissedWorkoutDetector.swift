@@ -8,14 +8,14 @@
 //
 
 import Foundation
-import Combine
 import SwiftUI
 import SwiftData
 import WorkoutKit
 
 @MainActor
-class MissedWorkoutDetector: ObservableObject {
-    @Published var missedWorkouts: [MissedWorkoutInfo] = []
+@Observable
+class MissedWorkoutDetector {
+    var missedWorkouts: [MissedWorkoutInfo] = []
 
     /// Check for missed workouts by comparing the device workout inventory
     /// against the current date. A workout is "missed" if its scheduled date

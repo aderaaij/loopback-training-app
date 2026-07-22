@@ -8,7 +8,6 @@
 //
 
 import Foundation
-import Combine
 import UserNotifications
 import SwiftUI
 import os
@@ -47,8 +46,9 @@ enum PreferredRunTime: String, CaseIterable, Identifiable {
 }
 
 @MainActor
-class NotificationManager: ObservableObject {
-    @Published var isAuthorized = false
+@Observable
+class NotificationManager {
+    var isAuthorized = false
 
     private let center = UNUserNotificationCenter.current()
     private let missedWorkoutCategoryId = "MISSED_WORKOUT"

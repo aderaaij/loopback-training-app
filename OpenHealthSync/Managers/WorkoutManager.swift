@@ -6,16 +6,17 @@
 //
 
 import Foundation
-import Combine
+import Observation
 import HealthKit
 import WorkoutKit
 
 @MainActor
-class WorkoutManager: ObservableObject {
-    @Published var workouts: [WorkoutSummary] = []
-    @Published var allWorkouts: [WorkoutSummary] = []
-    @Published var extractionStatuses: [UUID: WorkoutExtractionStatus] = [:]
-    @Published var activeFilter: HKWorkoutActivityType? = .running
+@Observable
+class WorkoutManager {
+    var workouts: [WorkoutSummary] = []
+    var allWorkouts: [WorkoutSummary] = []
+    var extractionStatuses: [UUID: WorkoutExtractionStatus] = [:]
+    var activeFilter: HKWorkoutActivityType? = .running
 
     let extractor = WorkoutExtractor()
     let apiClient = WorkoutAPIClient()

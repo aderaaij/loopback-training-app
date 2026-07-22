@@ -10,7 +10,7 @@ import SwiftUI
 import WorkoutKit
 
 struct PlansListView: View {
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
 
     private func plans(_ lifecycle: PlanLifecycle) -> [TrainingPlan] {
         let matching = scheduleManager.allPlans.filter { $0.lifecycle == lifecycle }
@@ -144,7 +144,7 @@ struct PlanRow: View {
 
 struct PlanDetailView: View {
     let plan: TrainingPlan
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
 
     @State private var workouts: [PlanWorkout] = []
     @State private var isLoading = true

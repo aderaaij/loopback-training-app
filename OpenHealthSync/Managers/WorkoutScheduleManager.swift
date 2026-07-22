@@ -8,7 +8,6 @@
 //
 
 import Foundation
-import Combine
 import SwiftUI
 import SwiftData
 import UIKit
@@ -43,28 +42,29 @@ enum SyncStep: Int, Equatable, CaseIterable {
 }
 
 @MainActor
-class WorkoutScheduleManager: ObservableObject {
-    @Published var scheduledWorkouts: [ScheduledWorkoutPlan] = []
-    @Published var refreshState: RefreshState = .idle
-    @Published var authorizationState: WorkoutScheduler.AuthorizationState = .notDetermined
-    @Published var activePlan: TrainingPlan?
+@Observable
+class WorkoutScheduleManager {
+    var scheduledWorkouts: [ScheduledWorkoutPlan] = []
+    var refreshState: RefreshState = .idle
+    var authorizationState: WorkoutScheduler.AuthorizationState = .notDetermined
+    var activePlan: TrainingPlan?
     /// The active strength cycle, if any — display-only (Hevy routine markers),
     /// never scheduled to the watch. Can coexist with an active running plan.
-    @Published var activeStrengthPlan: TrainingPlan?
-    @Published var planWorkouts: [PlanWorkout] = []
-    @Published var isLoadingPlan = true
-    @Published var allPlans: [TrainingPlan] = []
-    @Published var isLoadingPlans = false
+    var activeStrengthPlan: TrainingPlan?
+    var planWorkouts: [PlanWorkout] = []
+    var isLoadingPlan = true
+    var allPlans: [TrainingPlan] = []
+    var isLoadingPlans = false
     /// Merged run + strength agenda from /api/schedule/calendar.
-    @Published var calendarEntries: [CalendarEntry] = []
+    var calendarEntries: [CalendarEntry] = []
     /// The plan the celebration sheet is showing (nil = no sheet). Set by a
     /// banner tap or by the post-sync auto-check.
-    @Published var celebrationPlan: TrainingPlan?
+    var celebrationPlan: TrainingPlan?
     /// Every active plan from the last fetch. `activePlan`/`activeStrengthPlan`
     /// keep one per activity type for the hero cards, but finishable detection
     /// must scan all of them: the coach creates follow-up blocks as `active`
     /// before they start, so a wrapped plan and its successor coexist.
-    @Published private(set) var activePlans: [TrainingPlan] = []
+    private(set) var activePlans: [TrainingPlan] = []
 
     /// Plans whose auto-presented celebration was dismissed this session.
     /// The banner keeps showing (the server's `finishable` flag persists until

@@ -8,7 +8,6 @@
 //
 
 import SwiftUI
-import Combine
 
 /// Connection health derived from the most recent API request.
 enum ServerStatus: Equatable {
@@ -22,12 +21,13 @@ enum ServerStatus: Equatable {
     case authenticationError
 }
 
-final class ServerStatusMonitor: ObservableObject {
+@Observable
+final class ServerStatusMonitor {
     static let shared = ServerStatusMonitor()
 
-    @Published private(set) var status: ServerStatus = .unknown
+    private(set) var status: ServerStatus = .unknown
     /// Whether the last request went through the alternative (fallback) URL.
-    @Published private(set) var viaFallback = false
+    private(set) var viaFallback = false
 
     func record(_ status: ServerStatus, viaFallback: Bool = false) {
         if status != self.status { self.status = status }
@@ -76,7 +76,7 @@ struct ServerStatusDot: View {
 
 /// Settings row: dot + human-readable status.
 struct ServerStatusRow: View {
-    @ObservedObject private var monitor = ServerStatusMonitor.shared
+    private var monitor = ServerStatusMonitor.shared
 
     var body: some View {
         HStack {
@@ -94,7 +94,7 @@ struct ServerStatusRow: View {
 /// Toolbar indicator that stays invisible while everything is fine and shows
 /// a warning dot when the server is unreachable or the session died.
 struct ServerStatusToolbarDot: View {
-    @ObservedObject private var monitor = ServerStatusMonitor.shared
+    private var monitor = ServerStatusMonitor.shared
 
     var body: some View {
         switch monitor.status {

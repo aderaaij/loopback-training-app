@@ -18,7 +18,7 @@ import UIKit
 /// completed (from any surface), and tapping it opens the celebration sheet.
 struct PlanCompletionBanner: View {
     let plan: TrainingPlan
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
 
     var body: some View {
         Button {
@@ -61,7 +61,7 @@ struct PlanCompletionBanner: View {
 
 struct PlanCelebrationSheet: View {
     let plan: TrainingPlan
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
 
     @Environment(\.dismiss) private var dismiss
 

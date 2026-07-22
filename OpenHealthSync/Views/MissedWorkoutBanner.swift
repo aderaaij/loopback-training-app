@@ -10,8 +10,8 @@ import SwiftUI
 import SwiftData
 
 struct MissedWorkoutBanner: View {
-    @ObservedObject var detector: MissedWorkoutDetector
-    @EnvironmentObject private var scheduleManager: WorkoutScheduleManager
+    var detector: MissedWorkoutDetector
+    @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @Environment(\.modelContext) private var modelContext
 
     @State private var showFeedbackSheet = false

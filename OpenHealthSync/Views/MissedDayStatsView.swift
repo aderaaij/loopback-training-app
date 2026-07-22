@@ -12,7 +12,7 @@ import SwiftUI
 import SwiftData
 
 struct MissedDayStatsView: View {
-    @ObservedObject var detector: MissedWorkoutDetector
+    var detector: MissedWorkoutDetector
     @Query(sort: \WorkoutFeedback.scheduledDate, order: .reverse)
     private var feedbackEntries: [WorkoutFeedback]
 

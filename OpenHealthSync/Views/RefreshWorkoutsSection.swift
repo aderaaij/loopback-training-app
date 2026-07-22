@@ -5,7 +5,7 @@ import SwiftData
 
 /// The sync button and status indicators, usable in any container.
 struct RefreshWorkoutsContent: View {
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
@@ -89,7 +89,7 @@ struct RefreshWorkoutsContent: View {
 
 /// Wraps `RefreshWorkoutsContent` in a `Section` for use inside a `List`.
 struct RefreshWorkoutsSection: View {
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
 
     var body: some View {
         Section {

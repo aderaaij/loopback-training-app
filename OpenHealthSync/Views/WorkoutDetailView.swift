@@ -11,7 +11,7 @@ import HealthKit
 // MARK: - Workout List
 
 struct WorkoutListView: View {
-    @ObservedObject var workoutManager: WorkoutManager
+    var workoutManager: WorkoutManager
     @State private var showResyncConfirmation = false
     @State private var isResyncing = false
 
@@ -223,7 +223,7 @@ struct WorkoutRow: View {
 
 struct WorkoutDetailView: View {
     let summary: WorkoutSummary
-    @ObservedObject var workoutManager: WorkoutManager
+    var workoutManager: WorkoutManager
 
     @State private var detailed: DetailedWorkout?
     @State private var context: WorkoutContext?

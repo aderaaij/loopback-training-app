@@ -6,15 +6,16 @@
 //
 
 import Foundation
-import Combine
+import Observation
 import HealthKit
 import os
 
 /// Registers HealthKit background delivery observers so that new workouts
 /// and health data trigger automatic extraction and upload to the Training API.
 @MainActor
-class BackgroundSyncManager: ObservableObject {
-    @Published private(set) var isActive = false
+@Observable
+class BackgroundSyncManager {
+    private(set) var isActive = false
     private let healthStore = HKHealthStore()
     private let workoutManager: WorkoutManager
     private let healthMetricsSyncer: HealthMetricsSyncer

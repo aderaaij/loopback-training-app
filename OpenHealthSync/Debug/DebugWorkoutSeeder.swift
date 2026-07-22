@@ -17,7 +17,7 @@
 #if DEBUG
 
 import Foundation
-import Combine
+import Observation
 import HealthKit
 import CoreLocation
 
@@ -36,9 +36,10 @@ struct SeededGenerator: RandomNumberGenerator {
 }
 
 @MainActor
-final class DebugWorkoutSeeder: ObservableObject {
-    @Published var isWorking = false
-    @Published var statusMessage: String?
+@Observable
+final class DebugWorkoutSeeder {
+    var isWorking = false
+    var statusMessage: String?
 
     private let healthStore = HKHealthStore()
 

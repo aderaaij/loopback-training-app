@@ -18,7 +18,7 @@ struct ServerConfigView: View {
     @State private var showRemoveAllConfirmation = false
 
     #if DEBUG
-    @StateObject private var seeder = DebugWorkoutSeeder()
+    @State private var seeder = DebugWorkoutSeeder()
     @State private var markSeededAsSynced = true
     @State private var showDeleteSeededConfirmation = false
     #endif

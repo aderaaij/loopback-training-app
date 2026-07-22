@@ -10,7 +10,6 @@
 //
 
 import SwiftUI
-import Combine
 import UIKit
 
 // MARK: - Answer models
@@ -121,30 +120,31 @@ enum OnboardingStep: Hashable {
 // MARK: - Model
 
 @MainActor
-final class OnboardingModel: ObservableObject {
+@Observable
+final class OnboardingModel {
     private let apiClient: WorkoutAPIClient
     private let healthMetricsSyncer: HealthMetricsSyncer
 
     // Step navigation
-    @Published var stepIndex: Int = 0
+    var stepIndex: Int = 0
 
     // Answers
-    @Published var goal: RunGoal?
-    @Published var raceDateEnabled = false
-    @Published var raceDate = Date()
-    @Published var thirtyMin: ThirtyMinAnswer?
-    @Published var injuries: Set<Injury> = []
-    @Published var injuriesNone = false
-    @Published var injuryNote = ""
-    @Published var selectedDays: Set<Int> = []   // 1=Mon … 7=Sun
-    @Published var trainTime: TrainTime?
+    var goal: RunGoal?
+    var raceDateEnabled = false
+    var raceDate = Date()
+    var thirtyMin: ThirtyMinAnswer?
+    var injuries: Set<Injury> = []
+    var injuriesNone = false
+    var injuryNote = ""
+    var selectedDays: Set<Int> = []   // 1=Mon … 7=Sun
+    var trainTime: TrainTime?
 
     // Silent DOB capture
     private var birthYear: Int?
 
     // Write state (final step)
     enum WriteState { case idle, writing, success, failed }
-    @Published var writeState: WriteState = .idle
+    var writeState: WriteState = .idle
 
     init(apiClient: WorkoutAPIClient, healthMetricsSyncer: HealthMetricsSyncer) {
         self.apiClient = apiClient
@@ -387,7 +387,7 @@ final class OnboardingModel: ObservableObject {
 // MARK: - Onboarding View
 
 struct OnboardingView: View {
-    @StateObject private var model: OnboardingModel
+    @State private var model: OnboardingModel
     let onFinished: () -> Void
     /// Whatever the gated `.task` HK block would have done — called on finish.
     let startHealthPipeline: () async -> Void
@@ -401,7 +401,7 @@ struct OnboardingView: View {
         onFinished: @escaping () -> Void,
         startHealthPipeline: @escaping () async -> Void
     ) {
-        _model = StateObject(wrappedValue: OnboardingModel(
+        _model = State(initialValue: OnboardingModel(
             apiClient: apiClient,
             healthMetricsSyncer: healthMetricsSyncer
         ))

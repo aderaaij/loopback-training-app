@@ -4,9 +4,9 @@ import WorkoutKit
 import HealthKit
 
 struct TrainingCalendarView: View {
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
-    @ObservedObject var workoutManager: WorkoutManager
-    @ObservedObject var missedWorkoutDetector: MissedWorkoutDetector
+    var scheduleManager: WorkoutScheduleManager
+    var workoutManager: WorkoutManager
+    var missedWorkoutDetector: MissedWorkoutDetector
     let scheduledWorkouts: [ScheduledWorkoutPlan]
     @Binding var selectedDate: Date?
 
@@ -172,8 +172,8 @@ struct TrainingCalendarView: View {
 private struct DayDetailSection: View {
     let date: Date
     let items: [TrainingTimelineItem]
-    @ObservedObject var workoutManager: WorkoutManager
-    @ObservedObject var missedWorkoutDetector: MissedWorkoutDetector
+    var workoutManager: WorkoutManager
+    var missedWorkoutDetector: MissedWorkoutDetector
 
     @Environment(\.modelContext) private var modelContext
     @State private var feedbackWorkout: MissedWorkoutInfo?

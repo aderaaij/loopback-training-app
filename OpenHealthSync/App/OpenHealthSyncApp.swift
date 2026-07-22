@@ -12,12 +12,12 @@ import WorkoutKit
 @main
 struct LoopbackApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var workoutManager: WorkoutManager
-    @StateObject private var scheduleManager: WorkoutScheduleManager
-    @StateObject private var missedWorkoutDetector = MissedWorkoutDetector()
-    @StateObject private var notificationManager: NotificationManager
-    @StateObject private var backgroundSyncManager: BackgroundSyncManager
-    @StateObject private var session: SessionStore
+    @State private var workoutManager: WorkoutManager
+    @State private var scheduleManager: WorkoutScheduleManager
+    @State private var missedWorkoutDetector = MissedWorkoutDetector()
+    @State private var notificationManager: NotificationManager
+    @State private var backgroundSyncManager: BackgroundSyncManager
+    @State private var session: SessionStore
 
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
     @AppStorage("healthMetricsSyncEnabled") private var healthMetricsSyncEnabled: Bool = true
@@ -51,14 +51,14 @@ struct LoopbackApp: App {
         wm.scheduleManager = sm
         let nm = NotificationManager()
         sm.notificationManager = nm
-        _workoutManager = StateObject(wrappedValue: wm)
-        _scheduleManager = StateObject(wrappedValue: sm)
-        _notificationManager = StateObject(wrappedValue: nm)
-        _backgroundSyncManager = StateObject(wrappedValue: BackgroundSyncManager(
+        _workoutManager = State(initialValue: wm)
+        _scheduleManager = State(initialValue: sm)
+        _notificationManager = State(initialValue: nm)
+        _backgroundSyncManager = State(initialValue: BackgroundSyncManager(
             workoutManager: wm,
             healthMetricsSyncer: syncer
         ))
-        _session = StateObject(wrappedValue: SessionStore(apiClient: client, workoutManager: wm))
+        _session = State(initialValue: SessionStore(apiClient: client, workoutManager: wm))
     }
 
     var body: some Scene {
@@ -101,7 +101,7 @@ struct LoopbackApp: App {
                     await reloadAll()
                 }
             )
-            .environmentObject(scheduleManager)
+            .environment(scheduleManager)
             // Any /api call returning 401 signals a dead session → sign out.
             .onReceive(NotificationCenter.default.publisher(for: .trainingAPIUnauthorized)) { _ in
                 session.handleUnauthorized()

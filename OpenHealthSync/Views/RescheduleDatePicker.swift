@@ -15,7 +15,7 @@ struct RescheduleDatePicker: View {
     let onConfirm: (Date) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var scheduleManager: WorkoutScheduleManager
+    @Environment(WorkoutScheduleManager.self) private var scheduleManager
 
     @State private var selectedDate: Date = {
         // Default to tomorrow
@@ -190,5 +190,5 @@ private struct RescheduleDayCell: View {
     RescheduleDatePicker(workout: workout) { newDate in
         print("Rescheduled to \(newDate)")
     }
-    .environmentObject(WorkoutScheduleManager(apiClient: WorkoutAPIClient()))
+    .environment(WorkoutScheduleManager(apiClient: WorkoutAPIClient()))
 }

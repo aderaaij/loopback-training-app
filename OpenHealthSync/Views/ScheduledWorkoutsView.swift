@@ -12,9 +12,9 @@ import WorkoutKit
 import HealthKit
 
 struct TrainingTabView: View {
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
-    @ObservedObject var workoutManager: WorkoutManager
-    @ObservedObject var missedWorkoutDetector: MissedWorkoutDetector
+    var scheduleManager: WorkoutScheduleManager
+    var workoutManager: WorkoutManager
+    var missedWorkoutDetector: MissedWorkoutDetector
     @Environment(\.modelContext) private var modelContext
     @Query private var feedbackEntries: [WorkoutFeedback]
     @State private var viewMode: ViewMode = .timeline

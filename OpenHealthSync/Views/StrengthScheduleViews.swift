@@ -82,7 +82,7 @@ struct StrengthSessionRow: View {
 /// cycle horizon ("N days left" / "plan the next one" cue).
 struct StrengthCycleCard: View {
     let plan: TrainingPlan
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
+    var scheduleManager: WorkoutScheduleManager
 
     var body: some View {
         NavigationLink {

@@ -15,8 +15,8 @@ import os
 
 struct MissedWorkoutFeedbackFlow: View {
     let missedWorkouts: [MissedWorkoutInfo]
-    @ObservedObject var detector: MissedWorkoutDetector
-    @EnvironmentObject private var scheduleManager: WorkoutScheduleManager
+    var detector: MissedWorkoutDetector
+    @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentIndex = 0

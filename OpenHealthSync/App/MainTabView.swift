@@ -5,10 +5,10 @@ enum LBTab: Hashable {
 }
 
 struct MainTabView: View {
-    @ObservedObject var workoutManager: WorkoutManager
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
-    @ObservedObject var missedWorkoutDetector: MissedWorkoutDetector
-    @ObservedObject var session: SessionStore
+    var workoutManager: WorkoutManager
+    var scheduleManager: WorkoutScheduleManager
+    var missedWorkoutDetector: MissedWorkoutDetector
+    var session: SessionStore
     let onReconnect: (String, String) async throws -> Void
 
     @State private var tab: LBTab = .training
@@ -93,9 +93,9 @@ struct LBTabBar: View {
 // MARK: - Settings Tab
 
 private struct SettingsTabView: View {
-    @ObservedObject var workoutManager: WorkoutManager
-    @ObservedObject var scheduleManager: WorkoutScheduleManager
-    @ObservedObject var session: SessionStore
+    var workoutManager: WorkoutManager
+    var scheduleManager: WorkoutScheduleManager
+    var session: SessionStore
     let onReconnect: (String, String) async throws -> Void
 
     var body: some View {
