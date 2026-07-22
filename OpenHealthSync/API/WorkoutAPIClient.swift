@@ -15,16 +15,21 @@ actor WorkoutAPIClient {
     private var apiKey: String
 
     // Debug builds record every request with Pulse for on-device inspection
-    // (Settings → Network Log). The Authorization header is redacted before
-    // anything reaches the log store.
+    // (Settings → Network Log). This must be Pulse's URLSessionProxy, not a
+    // URLSession with a proxy delegate: the async data(for:) API routes
+    // per-task events past session-level delegates, which leaves every
+    // request stuck "pending" in the console. The Authorization header is
+    // redacted before anything reaches the log store.
     #if DEBUG
-    private nonisolated static let session: URLSession = {
-        var configuration = NetworkLogger.Configuration()
-        configuration.sensitiveHeaders = ["Authorization"]
-        return URLSession(
+    private nonisolated static let session: URLSessionProxy = {
+        var loggerConfiguration = NetworkLogger.Configuration()
+        loggerConfiguration.sensitiveHeaders = ["Authorization"]
+        var options = URLSessionProxy.Options()
+        options.isMockingEnabled = false
+        return URLSessionProxy(
             configuration: .default,
-            delegate: URLSessionProxyDelegate(logger: NetworkLogger(configuration: configuration)),
-            delegateQueue: nil
+            logger: NetworkLogger(configuration: loggerConfiguration),
+            options: options
         )
     }()
     #else
