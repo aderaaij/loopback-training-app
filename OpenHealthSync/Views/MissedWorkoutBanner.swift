@@ -107,7 +107,7 @@ struct MissedWorkoutBanner: View {
                     newDate: inserted.newDate,
                     dismissed: inserted.dismissed
                 )
-                scheduleManager.syncFeedback(payload, feedbackId: inserted.id, modelContext: modelContext)
+                scheduleManager.feedbackSync.syncFeedback(payload, feedbackId: inserted.id, modelContext: modelContext)
             }
         }
     }

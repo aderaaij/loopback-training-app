@@ -304,7 +304,7 @@ struct MissedWorkoutFeedbackSheet: View {
             newDate: feedback.newDate,
             dismissed: feedback.dismissed
         )
-        scheduleManager.syncFeedback(payload, feedbackId: feedback.id, modelContext: modelContext)
+        scheduleManager.feedbackSync.syncFeedback(payload, feedbackId: feedback.id, modelContext: modelContext)
     }
 
     // MARK: - Action Button Helper

@@ -72,6 +72,9 @@ class WorkoutScheduleManager {
     private var celebrationSnoozedIds: Set<UUID> = []
 
     private let apiClient: WorkoutAPIClient
+    /// Uploads missed-workout feedback; owned here so views reach it through
+    /// the manager they already hold.
+    let feedbackSync: FeedbackSyncService
     /// Posts the "you finished {plan}" local notification when a plan turns
     /// finishable during a background wake. Set once at app init.
     weak var notificationManager: NotificationManager?
@@ -100,6 +103,7 @@ class WorkoutScheduleManager {
 
     init(apiClient: WorkoutAPIClient) {
         self.apiClient = apiClient
+        self.feedbackSync = FeedbackSyncService(apiClient: apiClient)
     }
 
     /// Fallback source of truth for plan workouts whose API-supplied `scheduled_date`
@@ -400,7 +404,7 @@ class WorkoutScheduleManager {
     func refreshFromServer(modelContext: ModelContext? = nil) async {
         // Sync any unsynced feedback entries first
         if let modelContext {
-            await syncUnsyncedFeedback(modelContext: modelContext)
+            await feedbackSync.syncUnsyncedFeedback(modelContext: modelContext)
         }
 
         refreshState = .syncing(step: .inventory)
@@ -506,66 +510,6 @@ class WorkoutScheduleManager {
         scheduledDateMap[id] = newDateComponents
         await loadScheduledWorkouts()
         return true
-    }
-
-    // MARK: - Sync Feedback to Server
-
-    /// Fire-and-forget upload of feedback to the training API.
-    /// Marks the SwiftData entry as synced on success.
-    func syncFeedback(_ payload: WorkoutFeedbackPayload, feedbackId: UUID, modelContext: ModelContext) {
-        Task {
-            do {
-                try await apiClient.submitFeedback(payload)
-                markFeedbackSynced(id: feedbackId, modelContext: modelContext)
-            } catch {
-                AppLog.sync.error("Feedback sync failed (will retry on next sync): \(error.localizedDescription, privacy: .public)")
-            }
-        }
-    }
-
-    /// Retry uploading any feedback entries that haven't been synced yet.
-    /// Called during the refresh flow to catch entries that failed on first attempt.
-    func syncUnsyncedFeedback(modelContext: ModelContext) async {
-        let descriptor = FetchDescriptor<WorkoutFeedback>(
-            predicate: #Predicate<WorkoutFeedback> { $0.synced == false }
-        )
-        guard let unsynced = try? modelContext.fetch(descriptor), !unsynced.isEmpty else {
-            return
-        }
-
-        for feedback in unsynced {
-            let payload = WorkoutFeedbackPayload(
-                id: feedback.id,
-                workoutId: feedback.workoutId,
-                workoutName: feedback.workoutName,
-                scheduledDate: feedback.scheduledDate,
-                detectedAt: feedback.detectedAt,
-                acknowledgedAt: feedback.acknowledgedAt,
-                reason: feedback.reason.rawValue,
-                reasonNote: feedback.reasonNote,
-                action: feedback.action.rawValue,
-                newDate: feedback.newDate,
-                dismissed: feedback.dismissed
-            )
-            do {
-                try await apiClient.submitFeedback(payload)
-                feedback.synced = true
-            } catch {
-                AppLog.sync.error("Retry sync failed for feedback \(feedback.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            }
-        }
-
-        try? modelContext.save()
-    }
-
-    private func markFeedbackSynced(id: UUID, modelContext: ModelContext) {
-        let descriptor = FetchDescriptor<WorkoutFeedback>(
-            predicate: #Predicate<WorkoutFeedback> { $0.id == id }
-        )
-        if let feedback = try? modelContext.fetch(descriptor).first {
-            feedback.synced = true
-            try? modelContext.save()
-        }
     }
 
     // MARK: - Edit Workout (remove + re-schedule)
