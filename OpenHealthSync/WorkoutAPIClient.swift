@@ -13,6 +13,21 @@ actor WorkoutAPIClient {
 
     var isConfigured: Bool { true }
 
+    // The API speaks ISO-8601 dates in both directions; every endpoint goes
+    // through these shared coders so no method can drift to a different
+    // date strategy.
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
     init(baseURL: String? = nil, apiKey: String? = nil) {
         self.baseURL = URL(string: baseURL ?? "") ?? URL(string: "https://localhost")!
         self.apiKey = apiKey ?? ""
@@ -23,28 +38,89 @@ actor WorkoutAPIClient {
         self.apiKey = apiKey
     }
 
-    /// Performs a lightweight authenticated request to verify the current
-    /// base URL and API key. Throws on an unreachable host or a non-2xx
-    /// (e.g. 401 for a bad key) so callers can surface a connection result.
-    func checkConnection() async throws {
-        let url = baseURL.appendingPathComponent("api/plans")
+    // MARK: - Request Engine
+
+    /// Builds, sends, and validates every request. A 401 posts
+    /// `.trainingAPIUnauthorized` (dead session → app routes to login) unless
+    /// `signalsUnauthorized` is false — endpoints that probe candidate
+    /// credentials or run during sign-out must surface auth failures locally
+    /// instead of wiping the current session.
+    ///
+    /// Status codes in `accepting` are returned as success so callers can
+    /// branch on them (404 → nil, 409 → idempotent create, ...).
+    @discardableResult
+    private func perform(
+        _ method: String,
+        _ path: String,
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        accepting extraOK: Set<Int> = [],
+        signalsUnauthorized: Bool = true,
+        timeout: TimeInterval? = nil,
+        on overrideURL: URL? = nil,
+        authenticated: Bool = true
+    ) async throws -> (data: Data, status: Int) {
+        var url = (overrideURL ?? baseURL).appendingPathComponent(path)
+        if !query.isEmpty {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = query
+            url = components.url!
+        }
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
+        request.httpMethod = method
+        if authenticated {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        if let timeout {
+            request.timeoutInterval = timeout
+        }
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
-        // Intentionally does NOT post .trainingAPIUnauthorized: this verifies a
-        // candidate credential (e.g. a pasted token in Settings) and a 401 here
-        // must surface as an error, not sign the current session out.
         guard let http = response as? HTTPURLResponse else {
             throw WorkoutAPIError.invalidResponse
         }
-        guard (200...299).contains(http.statusCode) else {
-            throw WorkoutAPIError.serverError(http.statusCode)
+        let code = http.statusCode
+        if (200...299).contains(code) || extraOK.contains(code) {
+            return (data, code)
         }
+        if code == 401, signalsUnauthorized {
+            NotificationCenter.default.post(name: .trainingAPIUnauthorized, object: nil)
+            throw WorkoutAPIError.unauthorized
+        }
+        throw WorkoutAPIError.serverError(code)
+    }
+
+    /// `perform` + decode with the shared ISO-8601 decoder.
+    private func request<T: Decodable>(
+        _ method: String,
+        _ path: String,
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        signalsUnauthorized: Bool = true
+    ) async throws -> T {
+        let (data, _) = try await perform(
+            method, path,
+            query: query,
+            body: body,
+            signalsUnauthorized: signalsUnauthorized
+        )
+        return try Self.decoder.decode(T.self, from: data)
+    }
+
+    /// Performs a lightweight authenticated request to verify the current
+    /// base URL and API key. Throws on an unreachable host or a non-2xx
+    /// (e.g. 401 for a bad key) so callers can surface a connection result.
+    /// Does not signal unauthorized: this verifies a candidate credential
+    /// (e.g. a pasted token in Settings) and a 401 here must surface as an
+    /// error, not sign the current session out.
+    func checkConnection() async throws {
+        try await perform("GET", "api/plans", signalsUnauthorized: false, timeout: 15)
     }
 
     // MARK: - Authentication
@@ -53,99 +129,47 @@ actor WorkoutAPIClient {
     /// design; maps auth-specific status codes to typed errors so the login
     /// UI can message them (a 401 here is a bad password, not a dead session).
     func login(baseURL: URL, username: String, password: String, deviceName: String) async throws -> LoginResponse {
-        let url = baseURL.appendingPathComponent("api/auth/login")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 20
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        let body = try JSONSerialization.data(withJSONObject: [
             "username": username,
             "password": password,
             "deviceName": deviceName,
         ])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, status) = try await perform(
+            "POST", "api/auth/login",
+            body: body,
+            accepting: [401, 429],
+            timeout: 20,
+            on: baseURL,
+            authenticated: false
+        )
 
-        guard let http = response as? HTTPURLResponse else {
-            throw WorkoutAPIError.invalidResponse
-        }
-        switch http.statusCode {
-        case 200...299: break
+        switch status {
         case 401: throw WorkoutAPIError.invalidCredentials
         case 429: throw WorkoutAPIError.rateLimited
-        default: throw WorkoutAPIError.serverError(http.statusCode)
+        default: return try Self.decoder.decode(LoginResponse.self, from: data)
         }
-
-        return try JSONDecoder().decode(LoginResponse.self, from: data)
     }
 
     /// Current user + their tokens. Used to populate "Signed in as …".
+    /// Doesn't signal unauthorized: called while applying a candidate manual
+    /// token, before the session is established.
     func fetchMe() async throws -> MeResponse {
-        let url = baseURL.appendingPathComponent("api/auth/me")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw WorkoutAPIError.invalidResponse
-        }
-
-        return try JSONDecoder().decode(MeResponse.self, from: data)
+        try await request("GET", "api/auth/me", signalsUnauthorized: false)
     }
 
     /// Revokes a token by id (logout / sign out a device). 204 = revoked,
-    /// 404 = already gone — both treated as success.
+    /// 404 = already gone — both treated as success. Doesn't signal
+    /// unauthorized: runs during sign-out, when the session is being cleared
+    /// anyway.
     func revokeToken(id: String) async throws {
-        let url = baseURL.appendingPathComponent("api/auth/tokens/\(id)")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let http = response as? HTTPURLResponse else {
-            throw WorkoutAPIError.invalidResponse
-        }
-        guard (200...299).contains(http.statusCode) || http.statusCode == 404 else {
-            throw WorkoutAPIError.serverError(http.statusCode)
-        }
+        try await perform("DELETE", "api/auth/tokens/\(id)", accepting: [404], signalsUnauthorized: false)
     }
 
-    // MARK: - Response Validation
-
-    /// Central response check for authenticated data endpoints. A 401 means the
-    /// session died (token revoked/expired, account disabled), so it posts
-    /// `.trainingAPIUnauthorized` for the app to route back to login.
-    private func validate(_ response: URLResponse, accepting extraOK: Set<Int> = []) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw WorkoutAPIError.invalidResponse
-        }
-        let code = http.statusCode
-        if (200...299).contains(code) || extraOK.contains(code) { return }
-        if code == 401 {
-            NotificationCenter.default.post(name: .trainingAPIUnauthorized, object: nil)
-            throw WorkoutAPIError.unauthorized
-        }
-        throw WorkoutAPIError.serverError(code)
-    }
+    // MARK: - Workout Upload
 
     func send(data: Data) async throws {
-        let url = baseURL.appendingPathComponent("api/workouts")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = data
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
+        try await perform("POST", "api/workouts", body: data)
     }
 
     // MARK: - Workout History (server-side aggregates & linkage)
@@ -155,209 +179,102 @@ actor WorkoutAPIClient {
     /// so there's no pagination. Periods with no workouts are simply absent —
     /// callers fill gaps when charting.
     func fetchWorkoutSummary(period: String, activityType: String? = nil) async throws -> [ServerWorkoutSummaryRow] {
-        let url = baseURL.appendingPathComponent("api/workouts/summary")
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        var queryItems = [URLQueryItem(name: "period", value: period)]
+        var query = [URLQueryItem(name: "period", value: period)]
         if let activityType {
-            queryItems.append(URLQueryItem(name: "activity_type", value: activityType))
+            query.append(URLQueryItem(name: "activity_type", value: activityType))
         }
-        components.queryItems = queryItems
-
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        return try JSONDecoder().decode([ServerWorkoutSummaryRow].self, from: data)
+        return try await request("GET", "api/workouts/summary", query: query)
     }
 
     /// Authoritative plan linkage for a synced workout (queue item, plan,
     /// feedback). `id` is the HealthKit UUID — the server's workout PK.
     /// A 404 means the workout isn't on the server (not synced yet, or a
     /// different account) — that's a normal case and returns nil; only a 401
-    /// goes through the session-wipe path in `validate`.
+    /// goes through the session-wipe path.
     func fetchWorkoutContext(id: UUID) async throws -> WorkoutContext? {
-        let url = baseURL.appendingPathComponent("api/workouts/\(id.uuidString)/context")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response, accepting: [404])
-        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
-            return nil
-        }
-
-        return try JSONDecoder().decode(WorkoutContext.self, from: data)
+        let (data, status) = try await perform("GET", "api/workouts/\(id.uuidString)/context", accepting: [404])
+        if status == 404 { return nil }
+        return try Self.decoder.decode(WorkoutContext.self, from: data)
     }
 
     // MARK: - Workout Inventory Sync
 
     func syncInventory(_ inventory: [WorkoutInventoryItem]) async throws {
-        let url = baseURL.appendingPathComponent("api/workouts/inventory")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(inventory)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
+        try await perform("PUT", "api/workouts/inventory", body: Self.encoder.encode(inventory))
     }
 
     // MARK: - Workout Queue
 
     func fetchQueue() async throws -> [QueuedWorkoutComposition] {
-        let url = baseURL.appendingPathComponent("api/workouts/queue")
+        try await request("GET", "api/workouts/queue")
+    }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    func updateQueueItemStatus(id: UUID, status: String) async throws {
+        try await perform(
+            "PATCH", "api/workouts/queue/\(id.uuidString)",
+            body: Self.encoder.encode(["status": status])
+        )
+    }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+    func deleteQueueItem(id: UUID) async throws {
+        try await perform("DELETE", "api/workouts/queue/\(id.uuidString)")
+    }
 
-        try validate(response)
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([QueuedWorkoutComposition].self, from: data)
+    /// Marks a queued plan workout as completed, server stamps completed_at idempotently
+    /// (only writes when currently null, so dual-write with inventory sync is safe).
+    func markPlanWorkoutCompleted(id: UUID) async throws {
+        try await perform(
+            "PATCH", "api/queue/\(id.uuidString)/status",
+            body: Self.encoder.encode(["status": "completed"])
+        )
     }
 
     // MARK: - Pending Actions (edit/delete)
 
     func fetchPendingActions() async throws -> [PendingWorkoutAction] {
-        let url = baseURL.appendingPathComponent("api/workouts/actions")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([PendingWorkoutAction].self, from: data)
+        try await request("GET", "api/workouts/actions")
     }
 
     func acknowledgePendingAction(id: UUID) async throws {
-        let url = baseURL.appendingPathComponent("api/workouts/actions/\(id.uuidString)")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
+        try await perform("DELETE", "api/workouts/actions/\(id.uuidString)")
     }
 
     // MARK: - Workout Feedback
 
+    /// 201 Created or 409 Conflict (idempotent re-submit) are both acceptable.
     func submitFeedback(_ payload: WorkoutFeedbackPayload) async throws {
-        let url = baseURL.appendingPathComponent("api/workouts/feedback")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        request.httpBody = try encoder.encode(payload)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        // 201 Created or 409 Conflict (idempotent) are both acceptable
-        try validate(response, accepting: [409])
+        try await perform("POST", "api/workouts/feedback", body: Self.encoder.encode(payload), accepting: [409])
     }
 
     // MARK: - Health Metrics
 
     func sendHealthMetrics(_ payload: HealthMetricsBulkPayload) async throws {
-        let url = baseURL.appendingPathComponent("api/health/metrics")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(payload)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
+        try await perform("POST", "api/health/metrics", body: Self.encoder.encode(payload))
     }
 
     // MARK: - Plan Notes (coach memory)
 
     /// Fetches existing notes for a conversation (used to dedupe onboarding
-    /// re-runs). Query params are snake_case; response fields we decode are
-    /// camelCase, so a plain decoder is correct.
+    /// re-runs). Query params are snake_case; response fields are camelCase.
     func fetchPlanNotes(conversationId: String, limit: Int = 50) async throws -> [PlanNote] {
-        let url = baseURL.appendingPathComponent("api/plan-notes")
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
+        try await request("GET", "api/plan-notes", query: [
             URLQueryItem(name: "conversation_id", value: conversationId),
             URLQueryItem(name: "limit", value: String(limit)),
-        ]
-
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        return try JSONDecoder().decode([PlanNote].self, from: data)
+        ])
     }
 
     /// Creates a new plan note (201 → the created note). Request body uses
     /// camelCase aliases (`conversationId`).
     @discardableResult
     func createPlanNote(_ note: PlanNoteCreate) async throws -> PlanNote {
-        let url = baseURL.appendingPathComponent("api/plan-notes")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(note)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        return try JSONDecoder().decode(PlanNote.self, from: data)
+        try await request("POST", "api/plan-notes", body: Self.encoder.encode(note))
     }
 
     /// Partial-updates an existing note by id (used to patch onboarding notes
     /// on re-run instead of creating duplicates).
     @discardableResult
     func updatePlanNote(id: String, _ update: PlanNoteUpdate) async throws -> PlanNote {
-        let url = baseURL.appendingPathComponent("api/plan-notes/\(id)")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(update)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        return try JSONDecoder().decode(PlanNote.self, from: data)
+        try await request("PATCH", "api/plan-notes/\(id)", body: Self.encoder.encode(update))
     }
 
     // MARK: - Training Plans
@@ -365,38 +282,19 @@ actor WorkoutAPIClient {
     /// Fetches every active plan. A running plan and a strength cycle can be
     /// active simultaneously, so callers split the result by activity type.
     func fetchActivePlans() async throws -> [TrainingPlan] {
-        let url = baseURL.appendingPathComponent("api/plans")
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "status", value: "active")]
-
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        let wrapped = try JSONDecoder().decode([FailableDecodable<TrainingPlan>].self, from: data)
-        return wrapped.compactMap(\.value)
+        try await fetchPlans(query: [URLQueryItem(name: "status", value: "active")])
     }
 
     /// Fetches every plan (no status filter), newest first. Used by the plans
     /// browser to group plans into upcoming / current / archived.
     func fetchAllPlans() async throws -> [TrainingPlan] {
-        let url = baseURL.appendingPathComponent("api/plans")
+        try await fetchPlans(query: [])
+    }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        // Decode resiliently: a single plan with malformed (LLM-authored)
-        // metadata shouldn't blank the entire list.
-        let wrapped = try JSONDecoder().decode([FailableDecodable<TrainingPlan>].self, from: data)
+    /// Decodes resiliently: a single plan with malformed (LLM-authored)
+    /// metadata shouldn't blank the entire list.
+    private func fetchPlans(query: [URLQueryItem]) async throws -> [TrainingPlan] {
+        let wrapped: [FailableDecodable<TrainingPlan>] = try await request("GET", "api/plans", query: query)
         return wrapped.compactMap(\.value)
     }
 
@@ -409,26 +307,17 @@ actor WorkoutAPIClient {
     /// completed it first; that maps to `.planNotActive` so callers refresh
     /// instead of erroring.
     func completePlan(id: UUID, feedback: String?, rating: Int?) async throws -> PlanCompletionResponse {
-        let url = baseURL.appendingPathComponent("api/plans/\(id.uuidString)/complete")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
         var body: [String: Any] = [:]
         if let feedback, !feedback.isEmpty { body["feedback"] = feedback }
         if let rating { body["rating"] = rating }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        if let http = response as? HTTPURLResponse, http.statusCode == 400 {
-            throw WorkoutAPIError.planNotActive
-        }
-        try validate(response)
-
-        return try JSONDecoder().decode(PlanCompletionResponse.self, from: data)
+        let (data, status) = try await perform(
+            "POST", "api/plans/\(id.uuidString)/complete",
+            body: JSONSerialization.data(withJSONObject: body),
+            accepting: [400]
+        )
+        if status == 400 { throw WorkoutAPIError.planNotActive }
+        return try Self.decoder.decode(PlanCompletionResponse.self, from: data)
     }
 
     // MARK: - Unified Schedule Calendar (runs + strength)
@@ -437,102 +326,20 @@ actor WorkoutAPIClient {
     /// flags. Dates are "yyyy-MM-dd"; the server defaults to today..+28d
     /// when a bound is omitted.
     func fetchScheduleCalendar(from: String? = nil, to: String? = nil) async throws -> CalendarResponse {
-        let url = baseURL.appendingPathComponent("api/schedule/calendar")
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        var queryItems: [URLQueryItem] = []
-        if let from { queryItems.append(URLQueryItem(name: "from", value: from)) }
-        if let to { queryItems.append(URLQueryItem(name: "to", value: to)) }
-        if !queryItems.isEmpty { components.queryItems = queryItems }
-
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        return try JSONDecoder().decode(CalendarResponse.self, from: data)
+        var query: [URLQueryItem] = []
+        if let from { query.append(URLQueryItem(name: "from", value: from)) }
+        if let to { query.append(URLQueryItem(name: "to", value: to)) }
+        return try await request("GET", "api/schedule/calendar", query: query)
     }
 
     /// Fetches a plan's cadence expanded to concrete dated sessions, with
     /// run-conflict warnings. Used by the strength plan detail screen.
     func fetchPlanSchedule(planId: UUID) async throws -> PlanScheduleResponse {
-        let url = baseURL.appendingPathComponent("api/plans/\(planId.uuidString)/schedule")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        return try JSONDecoder().decode(PlanScheduleResponse.self, from: data)
+        try await request("GET", "api/plans/\(planId.uuidString)/schedule")
     }
 
     func fetchPlanWorkouts(planId: UUID) async throws -> [PlanWorkout] {
-        let url = baseURL.appendingPathComponent("api/plans/\(planId.uuidString)/workouts")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([PlanWorkout].self, from: data)
-    }
-
-    // MARK: - Plan Workout Completion
-
-    /// Marks a queued plan workout as completed, server stamps completed_at idempotently
-    /// (only writes when currently null, so dual-write with inventory sync is safe).
-    func markPlanWorkoutCompleted(id: UUID) async throws {
-        let url = baseURL.appendingPathComponent("api/queue/\(id.uuidString)/status")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(["status": "completed"])
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-    }
-
-    // MARK: - Queue Item Status Update
-
-    func updateQueueItemStatus(id: UUID, status: String) async throws {
-        let url = baseURL.appendingPathComponent("api/workouts/queue/\(id.uuidString)")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(["status": status])
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
-    }
-
-    // MARK: - Queue Item Deletion
-
-    func deleteQueueItem(id: UUID) async throws {
-        let url = baseURL.appendingPathComponent("api/workouts/queue/\(id.uuidString)")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        try validate(response)
+        try await request("GET", "api/plans/\(planId.uuidString)/workouts")
     }
 }
 
