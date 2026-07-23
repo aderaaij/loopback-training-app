@@ -167,6 +167,10 @@ struct PlanDetailView: View {
         workouts.sorted { ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture) }
     }
 
+    private func scheduledPlan(for workout: PlanWorkout) -> ScheduledWorkoutPlan? {
+        scheduleManager.scheduledWorkouts.first { $0.plan.id == workout.id }
+    }
+
     /// Footer for the cadence section: the cycle horizon, cueing when it's
     /// time to plan the next block.
     private var horizonText: String? {
@@ -243,7 +247,18 @@ struct PlanDetailView: View {
             } else if !sortedWorkouts.isEmpty {
                 Section {
                     ForEach(sortedWorkouts) { workout in
-                        PlanWorkoutRow(workout: workout)
+                        // Only rows still present in the WorkoutKit scheduler
+                        // have a structured detail to open; the rest render
+                        // plain (no disclosure chevron).
+                        if let scheduled = scheduledPlan(for: workout) {
+                            NavigationLink {
+                                ScheduledWorkoutDetailView(scheduled: scheduled)
+                            } label: {
+                                PlanWorkoutRow(workout: workout)
+                            }
+                        } else {
+                            PlanWorkoutRow(workout: workout)
+                        }
                     }
                 } header: {
                     LBSectionHeader(title: "Workouts (\(sortedWorkouts.count))")
@@ -266,6 +281,12 @@ struct PlanDetailView: View {
         .navigationTitle(plan.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // The WorkoutKit scheduler backs the per-workout links; make sure
+            // it's loaded even when Plans is the first tab visited.
+            if scheduleManager.scheduledWorkouts.isEmpty {
+                await scheduleManager.loadScheduledWorkouts()
+            }
+
             // Reuse already-loaded workouts when viewing the active plan.
             if plan.id == scheduleManager.activePlan?.id, !scheduleManager.planWorkouts.isEmpty {
                 workouts = scheduleManager.planWorkouts
