@@ -82,8 +82,8 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
     case unknown
     /// Server is behind the minimum — the actionable "update the server" case.
     case serverTooOld(current: ServerVersion, minimum: ServerVersion)
-    /// Server is ahead of what this build knows — the softer "update the app"
-    /// note.
+    /// Server is ahead of what this build knows — usually the softer "update
+    /// the app" note, tinted as a warning when it's a whole major ahead.
     case serverNewer(current: ServerVersion, appSupports: ServerVersion)
 
     /// Oldest server this app can talk to. 0.x rule: a minor bump (0.1 → 0.2)
@@ -115,11 +115,19 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
         }
     }
 
-    /// True only for the actionable "server is behind" case, so the UI can tint
-    /// it as a warning and keep the "app is behind" note quieter.
+    /// The cases the UI tints as warnings: a server behind the minimum, or one
+    /// a full major ahead — certainly a breaking wire change under the same
+    /// rules that make a minor bump breaking. A minor-ahead server keeps the
+    /// quieter "app is behind" note.
     var isSevere: Bool {
-        if case .serverTooOld = self { return true }
-        return false
+        switch self {
+        case .serverTooOld:
+            return true
+        case let .serverNewer(current, appSupports):
+            return current.major > appSupports.major
+        case .compatible, .unknown:
+            return false
+        }
     }
 
     /// User-facing copy; nil when there's nothing to warn about.

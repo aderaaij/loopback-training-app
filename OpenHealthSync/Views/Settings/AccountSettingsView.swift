@@ -98,6 +98,7 @@ struct AccountSettingsView: View {
             }
             trainingAPIKey = storedAPIKey
         }
+        .task { await session.refreshServerHealth() }
         .onChange(of: trainingScheme) { _, _ in resetStatus() }
         .onChange(of: trainingHost) { _, _ in resetStatus() }
         .onChange(of: trainingAPIKey) { _, _ in resetStatus() }

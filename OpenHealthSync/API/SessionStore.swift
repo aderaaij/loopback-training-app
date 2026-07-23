@@ -77,19 +77,25 @@ final class SessionStore {
     /// Server-version handshake before adopting a URL (doc §1–2). Confirms the
     /// address is a healthy Loopback server — throwing `.notLoopbackServer` /
     /// `.databaseUnavailable` when it isn't — and records the reported version.
-    /// A server without `/api/health` (or a transient failure) degrades to
-    /// `.unknown` rather than blocking, so the caller can still try to sign in.
-    /// Returns the compatibility verdict; a warning is advisory, never fatal.
+    /// A transport failure rethrows: the follow-up sign-in would only time out
+    /// against the same dead address, so surface it now. A server that answers
+    /// without a health payload (pre-0.1.0, non-JSON) degrades to `.unknown`
+    /// so the caller can still try to sign in. Returns the compatibility
+    /// verdict; a warning is advisory, never fatal.
     @discardableResult
     func probeServerHealth(serverURL rawURL: String) async throws -> ServerCompatibility {
         let url = Self.normalizedURL(rawURL)
         let health: ServerHealth
         do {
             health = try await apiClient.fetchHealth(on: url)
+        } catch let error as URLError {
+            // Unreachable — nothing was learned about the server, so the last
+            // known version stays.
+            throw error
         } catch {
-            // No usable handshake (pre-0.1.0 server, unreachable, or a
-            // non-JSON response). Don't block on it — clear any stale version
-            // and let the actual sign-in surface a real connection failure.
+            // The server answered, but not with a health payload (pre-0.1.0
+            // server or a non-JSON response). Don't block on it — clear the
+            // stale version and sign in without one.
             storeServerVersion(nil)
             return .unknown
         }
@@ -101,6 +107,17 @@ final class SessionStore {
         }
         storeServerVersion(health.semanticVersion)
         return serverCompatibility
+    }
+
+    /// Silent version refresh for an established session (Settings → Account),
+    /// so the displayed version doesn't go stale on a server upgraded since
+    /// login. Uses the configured route — failover included — and records only
+    /// a successful Loopback answer; any failure keeps the last known version.
+    func refreshServerHealth() async {
+        guard isAuthenticated else { return }
+        guard let health = try? await apiClient.fetchHealth(),
+              health.isLoopbackServer else { return }
+        storeServerVersion(health.semanticVersion)
     }
 
     func login(serverURL rawURL: String, username: String, password: String, deviceName: String) async throws {
