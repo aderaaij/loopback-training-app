@@ -5,7 +5,8 @@
 //  DEBUG-only HealthKit seeder for the simulator: writes ~6 months of
 //  realistic runs (distance, energy, heart-rate series, GPS route around
 //  Lisbon) plus weekly strength sessions, so the workout list, detail charts,
-//  and splits all have data without a real watch.
+//  and splits all have data without a real watch. Last Saturday's long run
+//  carries a mid-run pause as the regression case for pause-aware splits.
 //
 //  The whole file is compiled out of Release builds. By default seeded
 //  workouts are marked as already-synced (same UserDefaults key
@@ -117,7 +118,15 @@ final class DebugWorkoutSeeder {
                     let start = calendar.date(byAdding: .minute,
                                               value: 6 * 60 + 40 + Int.random(in: -5...5, using: &rng),
                                               to: day)!
-                    if let id = try await seedRun(start: start, km: km, kind: run.kind, rng: &rng) {
+                    // Regression case for pause-aware splits: last Saturday's
+                    // long run gets a 3.5-minute stop ~20 minutes in (pause/
+                    // resume events, route gap, recovering HR). The split
+                    // containing it must pace like its neighbours and its HR
+                    // average must ignore the recovery dip.
+                    let pause: (at: TimeInterval, duration: TimeInterval)? =
+                        (week == 1 && run.kind == .long) ? (at: 1230, duration: 210) : nil
+                    if let id = try await seedRun(start: start, km: km, kind: run.kind,
+                                                  pause: pause, rng: &rng) {
                         seededIDs.append(id)
                     }
                 }
@@ -162,13 +171,27 @@ final class DebugWorkoutSeeder {
     }
 
     /// One outdoor run: paced distance + energy + HR samples and a GPS
-    /// out-and-back route along the Tejo.
+    /// out-and-back route along the Tejo. `pause` inserts a mid-run stop at
+    /// the given moving-time offset: samples after it shift by the pause
+    /// length, the route gets a gap, HR keeps recording (recovering), and
+    /// matching pause/resume workout events are written.
     private func seedRun(start: Date, km: Double, kind: RunKind,
+                         pause: (at: TimeInterval, duration: TimeInterval)? = nil,
                          rng: inout SeededGenerator) async throws -> UUID? {
         let paceSecPerKm = Double.random(in: 315...400, using: &rng)   // 5:15–6:40 /km
-        let duration = km * paceSecPerKm
-        let end = start.addingTimeInterval(duration)
+        let duration = km * paceSecPerKm                               // moving time
+        let end = start.addingTimeInterval(duration + (pause?.duration ?? 0))
         let speed = km * 1000 / duration                               // m/s
+
+        // Moving-time offset → wall-clock date. Interval starts shift when
+        // they begin at or after the pause; ends and instants only when
+        // strictly past it, so no sample straddles the paused window.
+        func wallStart(_ t: TimeInterval) -> Date {
+            start.addingTimeInterval(pause.map { t >= $0.at ? t + $0.duration : t } ?? t)
+        }
+        func wallPoint(_ t: TimeInterval) -> Date {
+            start.addingTimeInterval(pause.map { t > $0.at ? t + $0.duration : t } ?? t)
+        }
 
         let config = HKWorkoutConfiguration()
         config.activityType = .running
@@ -176,6 +199,17 @@ final class DebugWorkoutSeeder {
 
         let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: config, device: .local())
         try await builder.beginCollection(at: start)
+
+        if let pause {
+            try await builder.addWorkoutEvents([
+                HKWorkoutEvent(type: .pause,
+                               dateInterval: DateInterval(start: start.addingTimeInterval(pause.at), duration: 0),
+                               metadata: nil),
+                HKWorkoutEvent(type: .resume,
+                               dateInterval: DateInterval(start: start.addingTimeInterval(pause.at + pause.duration), duration: 0),
+                               metadata: nil),
+            ])
+        }
 
         var samples: [HKSample] = []
 
@@ -189,14 +223,14 @@ final class DebugWorkoutSeeder {
             samples.append(HKQuantitySample(
                 type: Self.distanceType,
                 quantity: HKQuantity(unit: .meter(), doubleValue: sliceMeters),
-                start: start.addingTimeInterval(t),
-                end: start.addingTimeInterval(sliceEnd)
+                start: wallStart(t),
+                end: wallPoint(sliceEnd)
             ))
             samples.append(HKQuantitySample(
                 type: Self.energyType,
                 quantity: HKQuantity(unit: .kilocalorie(), doubleValue: sliceKcal),
-                start: start.addingTimeInterval(t),
-                end: start.addingTimeInterval(sliceEnd)
+                start: wallStart(t),
+                end: wallPoint(sliceEnd)
             ))
             t = sliceEnd
         }
@@ -211,15 +245,17 @@ final class DebugWorkoutSeeder {
         case .tempo:
             samples.append(contentsOf: heartRateSamples(
                 start: start, duration: duration, warmupFrom: 130, steady: 162,
-                cooldownTo: 135, rng: &rng
+                cooldownTo: 135, pause: pause, rng: &rng
             ))
         case .long:
             samples.append(contentsOf: heartRateSamples(
-                start: start, duration: duration, warmupFrom: 108, steady: 144, rng: &rng
+                start: start, duration: duration, warmupFrom: 108, steady: 144,
+                pause: pause, rng: &rng
             ))
         case .easy:
             samples.append(contentsOf: heartRateSamples(
-                start: start, duration: duration, warmupFrom: 108, steady: 141, rng: &rng
+                start: start, duration: duration, warmupFrom: 108, steady: 141,
+                pause: pause, rng: &rng
             ))
         }
 
@@ -230,7 +266,7 @@ final class DebugWorkoutSeeder {
         // Out-and-back route: east along the river, then retrace.
         let routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: nil)
         try await routeBuilder.insertRouteData(routeLocations(
-            start: start, duration: duration, speed: speed, rng: &rng
+            start: start, duration: duration, speed: speed, pause: pause, rng: &rng
         ))
         try await routeBuilder.finishRoute(with: workout, metadata: nil)
 
@@ -274,6 +310,7 @@ final class DebugWorkoutSeeder {
     private func heartRateSamples(start: Date, duration: TimeInterval,
                                   warmupFrom: Double, steady: Double,
                                   cooldownTo: Double? = nil,
+                                  pause: (at: TimeInterval, duration: TimeInterval)? = nil,
                                   rng: inout SeededGenerator) -> [HKSample] {
         let bpmUnit = HKUnit.count().unitDivided(by: .minute())
         let warmup = min(300.0, duration / 4)
@@ -291,7 +328,8 @@ final class DebugWorkoutSeeder {
                 base = steady
             }
             let bpm = base + Double.random(in: -4...4, using: &rng)
-            let at = start.addingTimeInterval(t)
+            let wallOffset = pause.map { t > $0.at ? t + $0.duration : t } ?? t
+            let at = start.addingTimeInterval(wallOffset)
             samples.append(HKQuantitySample(
                 type: Self.heartRateType,
                 quantity: HKQuantity(unit: bpmUnit, doubleValue: bpm),
@@ -299,6 +337,24 @@ final class DebugWorkoutSeeder {
                 end: at
             ))
             t += 15
+        }
+
+        // The watch keeps recording HR through a pause, decaying toward rest —
+        // exactly the samples the extractor must exclude from split averages.
+        if let pause {
+            var pt: TimeInterval = 15
+            while pt < pause.duration {
+                let bpm = steady - (steady - 96) * min(1, pt / 120)
+                    + Double.random(in: -3...3, using: &rng)
+                let at = start.addingTimeInterval(pause.at + pt)
+                samples.append(HKQuantitySample(
+                    type: Self.heartRateType,
+                    quantity: HKQuantity(unit: bpmUnit, doubleValue: bpm),
+                    start: at,
+                    end: at
+                ))
+                pt += 15
+            }
         }
         return samples
     }
@@ -338,6 +394,7 @@ final class DebugWorkoutSeeder {
     }
 
     private func routeLocations(start: Date, duration: TimeInterval, speed: Double,
+                                pause: (at: TimeInterval, duration: TimeInterval)? = nil,
                                 rng: inout SeededGenerator) -> [CLLocation] {
         let interval: TimeInterval = 15
         let halfway = duration / 2
@@ -350,6 +407,10 @@ final class DebugWorkoutSeeder {
             // Distance from start along the out-and-back line.
             let along = t <= halfway ? speed * t : speed * (duration - t)
             let wiggle = sin(t / 40) * 25 + Double.random(in: -6...6, using: &rng)
+            // Route collection stops while paused: points after the pause
+            // shift by its length, leaving the wall-clock gap the extractor
+            // has to subtract from the enclosing split.
+            let wallOffset = pause.map { t > $0.at ? t + $0.duration : t } ?? t
             locations.append(CLLocation(
                 coordinate: CLLocationCoordinate2D(
                     latitude: Self.startCoordinate.latitude + wiggle / metersPerDegreeLat,
@@ -358,7 +419,7 @@ final class DebugWorkoutSeeder {
                 altitude: 8,
                 horizontalAccuracy: 5,
                 verticalAccuracy: 8,
-                timestamp: start.addingTimeInterval(t)
+                timestamp: start.addingTimeInterval(wallOffset)
             ))
             t += interval
         }

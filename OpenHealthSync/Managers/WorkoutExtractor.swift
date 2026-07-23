@@ -64,9 +64,16 @@ actor WorkoutExtractor {
         let rpe = await effortScore
         let estRpe = await estimatedEffortScore
 
-        // Compute splits from full-resolution data before downsampling
+        let activities = extractActivities(workout)
+        let events = extractEvents(workout)
+
+        // Compute splits from full-resolution data before downsampling. Pause
+        // intervals are subtracted so split pace/averages stay consistent with
+        // workout.duration, which excludes paused time.
+        let pauses = pauseIntervals(events: events, workoutEnd: workout.endDate)
         let splits = computeSplits(
-            route: route ?? [], heartRate: hr, cadence: cad, power: pwr
+            route: route ?? [], heartRate: hr, cadence: cad, power: pwr,
+            pauses: pauses
         )
 
         // Downsample for the JSON payload
@@ -78,9 +85,6 @@ actor WorkoutExtractor {
         let dsStride = downsampleTimeSeries(stride)
         let dsVertOsc = downsampleTimeSeries(vertOsc)
         let dsGct = downsampleTimeSeries(gct)
-
-        let activities = extractActivities(workout)
-        let events = extractEvents(workout)
 
         // Map HK metadata to [String: String]
         var metadataDict: [String: String]?
@@ -285,13 +289,86 @@ actor WorkoutExtractor {
         return entries
     }
 
+    // MARK: - Pause Intervals
+
+    /// Wall-clock intervals during which the workout was paused, from paired
+    /// pause/resume and motionPaused/motionResumed events. Auto-pause stops
+    /// Apple's duration clock just like a manual pause, so both pairs count.
+    /// pauseOrResumeRequest is a button press, not a state change, and is
+    /// ignored. An unmatched trailing pause runs to the workout's end.
+    func pauseIntervals(events: [WorkoutEventData]?, workoutEnd: Date) -> [DateInterval] {
+        guard let events, !events.isEmpty else { return [] }
+
+        var intervals: [DateInterval] = []
+        var manualStart: Date?
+        var motionStart: Date?
+
+        for event in events.sorted(by: { $0.startDate < $1.startDate }) {
+            switch event.type {
+            case "pause":
+                if manualStart == nil { manualStart = event.startDate }
+            case "resume":
+                if let start = manualStart, event.startDate > start {
+                    intervals.append(DateInterval(start: start, end: event.startDate))
+                }
+                manualStart = nil
+            case "motionPaused":
+                if motionStart == nil { motionStart = event.startDate }
+            case "motionResumed":
+                if let start = motionStart, event.startDate > start {
+                    intervals.append(DateInterval(start: start, end: event.startDate))
+                }
+                motionStart = nil
+            default:
+                break
+            }
+        }
+
+        if let start = manualStart, workoutEnd > start {
+            intervals.append(DateInterval(start: start, end: workoutEnd))
+        }
+        if let start = motionStart, workoutEnd > start {
+            intervals.append(DateInterval(start: start, end: workoutEnd))
+        }
+
+        return mergeIntervals(intervals)
+    }
+
+    /// Merges overlapping or touching intervals (a manual pause inside an
+    /// auto-pause must not be counted twice).
+    private func mergeIntervals(_ intervals: [DateInterval]) -> [DateInterval] {
+        guard intervals.count > 1 else { return intervals }
+        let sorted = intervals.sorted { $0.start < $1.start }
+        var merged = [sorted[0]]
+        for interval in sorted.dropFirst() {
+            let last = merged[merged.count - 1]
+            if interval.start <= last.end {
+                merged[merged.count - 1] = DateInterval(
+                    start: last.start, end: max(last.end, interval.end)
+                )
+            } else {
+                merged.append(interval)
+            }
+        }
+        return merged
+    }
+
+    /// Total overlap of [start, end] with the pause intervals.
+    private func pausedDuration(from start: Date, to end: Date, pauses: [DateInterval]) -> TimeInterval {
+        pauses.reduce(0) { total, pause in
+            let overlap = min(end, pause.end).timeIntervalSince(max(start, pause.start))
+            return total + max(0, overlap)
+        }
+    }
+
     // MARK: - Splits
 
     func computeSplits(
         route: [RoutePoint],
         heartRate: [TimeSeries]?,
         cadence: [TimeSeries]?,
-        power: [TimeSeries]?
+        power: [TimeSeries]?,
+        pauses: [DateInterval] = []
     ) -> [Split]? {
         guard route.count >= 2 else { return nil }
 
@@ -314,7 +391,8 @@ actor WorkoutExtractor {
                     distance: accumulatedDistance,
                     heartRate: heartRate,
                     cadence: cadence,
-                    power: power
+                    power: power,
+                    pauses: pauses
                 )
                 splits.append(split)
                 accumulatedDistance = 0
@@ -332,7 +410,8 @@ actor WorkoutExtractor {
                 distance: accumulatedDistance,
                 heartRate: heartRate,
                 cadence: cadence,
-                power: power
+                power: power,
+                pauses: pauses
             )
             splits.append(split)
         }
@@ -348,11 +427,16 @@ actor WorkoutExtractor {
         distance: Double,
         heartRate: [TimeSeries]?,
         cadence: [TimeSeries]?,
-        power: [TimeSeries]?
+        power: [TimeSeries]?,
+        pauses: [DateInterval]
     ) -> Split {
         let splitStart = route[startIdx].timestamp
         let splitEnd = route[endIdx].timestamp
-        let duration = splitEnd.timeIntervalSince(splitStart)
+        // Moving time, not wall-clock: paused time inside the split would
+        // otherwise inflate its duration and pace (startDate/endDate stay
+        // wall-clock bounds for charts).
+        let paused = pausedDuration(from: splitStart, to: splitEnd, pauses: pauses)
+        let duration = max(0, splitEnd.timeIntervalSince(splitStart) - paused)
         let pace = distance > 0 ? duration / (distance / 1000) : 0
 
         // Elevation gain/loss from route altitude data
@@ -369,9 +453,9 @@ actor WorkoutExtractor {
             distance: distance,
             duration: duration,
             pace: pace,
-            averageHeartRate: averageTimeSeries(heartRate, from: splitStart, to: splitEnd),
-            averageCadence: averageTimeSeries(cadence, from: splitStart, to: splitEnd),
-            averagePower: averageTimeSeries(power, from: splitStart, to: splitEnd),
+            averageHeartRate: averageTimeSeries(heartRate, from: splitStart, to: splitEnd, excluding: pauses),
+            averageCadence: averageTimeSeries(cadence, from: splitStart, to: splitEnd, excluding: pauses),
+            averagePower: averageTimeSeries(power, from: splitStart, to: splitEnd, excluding: pauses),
             elevationGain: elevGain > 0 ? elevGain : nil,
             elevationLoss: elevLoss > 0 ? elevLoss : nil,
             startDate: splitStart,
@@ -382,10 +466,16 @@ actor WorkoutExtractor {
     private func averageTimeSeries(
         _ series: [TimeSeries]?,
         from start: Date,
-        to end: Date
+        to end: Date,
+        excluding pauses: [DateInterval] = []
     ) -> Double? {
         guard let data = series else { return nil }
-        let inRange = data.filter { $0.timestamp >= start && $0.timestamp <= end }
+        // HR keeps sampling through a pause (recovering values), so paused
+        // samples must not drag the split average below the running value.
+        let inRange = data.filter { sample in
+            sample.timestamp >= start && sample.timestamp <= end
+                && !pauses.contains { $0.contains(sample.timestamp) }
+        }
         guard !inRange.isEmpty else { return nil }
         return inRange.reduce(0.0) { $0 + $1.value } / Double(inRange.count)
     }
