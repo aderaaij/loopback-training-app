@@ -72,7 +72,6 @@ struct PlanOverviewCard: View {
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     )
                 )
-                .overlay(signalMotif, alignment: .center)
                 .overlay(LBCornerTicks())
                 .clipShape(RoundedRectangle(cornerRadius: LB.rHero, style: .continuous))
         )
@@ -154,18 +153,6 @@ struct PlanOverviewCard: View {
                     .lineLimit(1)
             }
         }
-    }
-
-    // MARK: - Signal motif (waveform behind the hero)
-
-    private var signalMotif: some View {
-        SignalWave()
-            .stroke(LB.accent, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-            .frame(height: 56)
-            .opacity(0.32)
-            .shadow(color: LB.accent.opacity(0.6), radius: 4)
-            .offset(y: 6)
-            .allowsHitTesting(false)
     }
 
     // MARK: - Phase Pills
@@ -279,28 +266,6 @@ struct PlanOverviewCard: View {
             let week = max(0, days / 7)
             return phase.weeks.contains(week)
         }
-    }
-}
-
-// MARK: - Signal waveform shape
-
-struct SignalWave: Shape {
-    // From the Loopback design, on a 360×56 viewBox.
-    private static let points: [CGPoint] = [
-        CGPoint(x: 0, y: 30), CGPoint(x: 78, y: 30), CGPoint(x: 85, y: 30),
-        CGPoint(x: 90, y: 8), CGPoint(x: 97, y: 46), CGPoint(x: 103, y: 30),
-        CGPoint(x: 180, y: 30), CGPoint(x: 189, y: 30), CGPoint(x: 194, y: 10),
-        CGPoint(x: 201, y: 37), CGPoint(x: 206, y: 30), CGPoint(x: 360, y: 30)
-    ]
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let sx = rect.width / 360, sy = rect.height / 56
-        for (i, pt) in Self.points.enumerated() {
-            let cp = CGPoint(x: rect.minX + pt.x * sx, y: rect.minY + pt.y * sy)
-            if i == 0 { p.move(to: cp) } else { p.addLine(to: cp) }
-        }
-        return p
     }
 }
 
