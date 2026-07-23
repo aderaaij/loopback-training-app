@@ -15,41 +15,132 @@ struct ScheduledWorkoutDetailView: View {
     let scheduled: ScheduledWorkoutPlan
 
     var body: some View {
-        List {
-            headerSection
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                titleHeader
 
-            switch scheduled.plan.workout {
-            case .custom(let custom):
-                customWorkoutSections(custom)
-            case .goal(let goal):
-                goalWorkoutSection(goal)
-            case .pacer(let pacer):
-                pacerWorkoutSection(pacer)
-            case .swimBikeRun:
-                Section("Workout") {
-                    Text("Swim-Bike-Run Workout")
-                }
-            @unknown default:
-                Section("Workout") {
-                    Text("Workout details unavailable")
+                switch scheduled.plan.workout {
+                case .custom(let custom):
+                    customWorkoutSections(custom)
+                case .goal(let goal):
+                    goalWorkoutSection(goal)
+                case .pacer(let pacer):
+                    pacerWorkoutSection(pacer)
+                case .swimBikeRun:
+                    unavailableSection(text: "Swim-Bike-Run Workout")
+                @unknown default:
+                    unavailableSection(text: "Workout details unavailable")
                 }
             }
+            .padding(18)
         }
-        .lbList()
+        .background(LB.bg)
         .navigationTitle(workoutName)
         .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Header
 
-    @ViewBuilder
-    private var headerSection: some View {
-        Section {
-            LabeledContent("Type", value: activityName)
-            if let dateString = formattedDate {
-                LabeledContent("Scheduled", value: dateString)
+    private var titleHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 10) {
+                Text(workoutName)
+                    .font(.lbDisplay(24, .bold))
+                    .tracking(-0.6)
+                    .foregroundStyle(LB.textPrimary)
+                Spacer()
+                LBStatusChip(
+                    text: scheduled.complete ? "Completed" : "Upcoming",
+                    color: scheduled.complete ? LB.green : LB.blue
+                )
             }
-            LabeledContent("Status", value: scheduled.complete ? "Completed" : "Upcoming")
+            Text(metaLine)
+                .font(.lbMono(11))
+                .foregroundStyle(LB.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var metaLine: String {
+        var parts = [activityName.uppercased()]
+        if let formattedDate {
+            parts.append(formattedDate.uppercased())
+        }
+        if let total = totalDuration {
+            parts.append("\(total.partial ? "≥ " : "")\(formatSeconds(total.seconds).uppercased()) TOTAL")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Durations
+
+    /// Seconds for a time-based goal; nil for open/distance/energy goals,
+    /// whose duration we can't know up front.
+    private func seconds(from goal: WorkoutGoal) -> TimeInterval? {
+        if case .time(let value, let unit) = goal {
+            return Measurement(value: value, unit: unit).converted(to: .seconds).value
+        }
+        return nil
+    }
+
+    /// Summed time of every step across all iterations. `partial` is true when
+    /// any step has a non-time goal, so the total is a lower bound.
+    private func blockDuration(_ block: IntervalBlock) -> (seconds: TimeInterval, partial: Bool) {
+        var total: TimeInterval = 0
+        var partial = false
+        for step in block.steps {
+            if let s = seconds(from: step.step.goal) {
+                total += s
+            } else {
+                partial = true
+            }
+        }
+        return (total * Double(block.iterations), partial)
+    }
+
+    private var totalDuration: (seconds: TimeInterval, partial: Bool)? {
+        switch scheduled.plan.workout {
+        case .custom(let custom):
+            var total: TimeInterval = 0
+            var partial = false
+            if let warmup = custom.warmup {
+                if let s = seconds(from: warmup.goal) { total += s } else { partial = true }
+            }
+            for block in custom.blocks {
+                let d = blockDuration(block)
+                total += d.seconds
+                partial = partial || d.partial
+            }
+            if let cooldown = custom.cooldown {
+                if let s = seconds(from: cooldown.goal) { total += s } else { partial = true }
+            }
+            return total > 0 ? (total, partial) : nil
+        case .goal(let goal):
+            return seconds(from: goal.goal).map { ($0, false) }
+        case .pacer(let pacer):
+            return (pacer.time.converted(to: .seconds).value, false)
+        default:
+            return nil
+        }
+    }
+
+    private func blockTrailing(_ block: IntervalBlock) -> String? {
+        let d = blockDuration(block)
+        var parts: [String] = []
+        if block.iterations > 1 {
+            parts.append("\(block.iterations)×")
+        }
+        if d.seconds > 0 {
+            parts.append("\(d.partial ? "≥ " : "")\(formatSeconds(d.seconds))")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func unavailableSection(text: String) -> some View {
+        LBDetailSection(title: "Workout") {
+            Text(text)
+                .font(.lbBody(14))
+                .foregroundStyle(LB.textSecondary)
         }
     }
 
@@ -58,21 +149,29 @@ struct ScheduledWorkoutDetailView: View {
     @ViewBuilder
     private func customWorkoutSections(_ custom: CustomWorkout) -> some View {
         if let warmup = custom.warmup {
-            Section("Warmup") {
+            LBDetailSection(title: "Warmup") {
                 stepRow(goal: warmup.goal, alert: warmup.alert)
             }
         }
 
         ForEach(Array(custom.blocks.enumerated()), id: \.offset) { index, block in
-            Section(blockHeader(index: index, block: block)) {
-                ForEach(Array(block.steps.enumerated()), id: \.offset) { stepIndex, intervalStep in
-                    intervalStepRow(intervalStep, stepNumber: stepIndex + 1)
+            LBDetailSection(
+                title: "Block \(index + 1)",
+                trailing: blockTrailing(block)
+            ) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(block.steps.enumerated()), id: \.offset) { stepIndex, intervalStep in
+                        if stepIndex > 0 {
+                            Rectangle().fill(LB.line).frame(height: 1)
+                        }
+                        intervalStepRow(intervalStep)
+                    }
                 }
             }
         }
 
         if let cooldown = custom.cooldown {
-            Section("Cooldown") {
+            LBDetailSection(title: "Cooldown") {
                 stepRow(goal: cooldown.goal, alert: cooldown.alert)
             }
         }
@@ -80,43 +179,45 @@ struct ScheduledWorkoutDetailView: View {
 
     // MARK: - Goal Workout
 
-    @ViewBuilder
     private func goalWorkoutSection(_ goal: SingleGoalWorkout) -> some View {
-        Section("Goal") {
-            LabeledContent("Activity", value: goal.activity.displayName)
-            goalRow(goal.goal)
+        LBDetailSection(title: "Goal") {
+            VStack(alignment: .leading, spacing: 10) {
+                detailRow(label: "Activity", value: goal.activity.displayName)
+                goalRow(goal.goal)
+            }
         }
     }
 
     // MARK: - Pacer Workout
 
-    @ViewBuilder
     private func pacerWorkoutSection(_ pacer: PacerWorkout) -> some View {
-        Section("Pacer") {
-            LabeledContent("Activity", value: pacer.activity.displayName)
-            LabeledContent("Distance", value: formatMeasurement(pacer.distance))
-            LabeledContent("Time", value: formatDuration(pacer.time))
-            LabeledContent("Pace", value: formatPace(distance: pacer.distance, time: pacer.time))
+        LBDetailSection(title: "Pacer") {
+            VStack(alignment: .leading, spacing: 10) {
+                detailRow(label: "Activity", value: pacer.activity.displayName)
+                detailRow(label: "Distance", value: formatMeasurement(pacer.distance))
+                detailRow(label: "Time", value: formatDuration(pacer.time))
+                detailRow(label: "Pace", value: formatPace(distance: pacer.distance, time: pacer.time))
+            }
         }
     }
 
     // MARK: - Interval Step Row
 
-    private func intervalStepRow(_ intervalStep: IntervalStep, stepNumber: Int) -> some View {
+    private func intervalStepRow(_ intervalStep: IntervalStep) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 purposeLabel(intervalStep.purpose)
                 Spacer()
                 Text(formatGoal(intervalStep.step.goal))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.lbMono(12))
+                    .foregroundStyle(LB.textBright)
             }
 
             if let alert = intervalStep.step.alert {
                 alertLabel(alert)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Simple Step Row (warmup/cooldown)
@@ -129,13 +230,24 @@ struct ScheduledWorkoutDetailView: View {
                 alertLabel(alert)
             }
         }
-        .padding(.vertical, 2)
     }
 
-    // MARK: - Goal Display
+    // MARK: - Labeled Rows
 
     private func goalRow(_ goal: WorkoutGoal) -> some View {
-        LabeledContent("Goal", value: formatGoal(goal))
+        detailRow(label: "Goal", value: formatGoal(goal))
+    }
+
+    private func detailRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.lbBody(14))
+                .foregroundStyle(LB.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.lbMono(12))
+                .foregroundStyle(LB.textBright)
+        }
     }
 
     // MARK: - Purpose Label
@@ -146,30 +258,22 @@ struct ScheduledWorkoutDetailView: View {
                 .fill(purpose == .work ? LB.red : LB.blue)
                 .frame(width: 8, height: 8)
             Text(purpose == .work ? "Work" : "Recovery")
-                .font(.subheadline.weight(.medium))
+                .font(.lbBody(14, .semibold))
+                .foregroundStyle(LB.textPrimary)
         }
     }
 
     // MARK: - Alert Label
 
     private func alertLabel(_ alert: any WorkoutAlert) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Image(systemName: alertIconName(alert))
-                .font(.caption)
+                .font(.system(size: 11))
                 .foregroundStyle(LB.amber)
             Text(formatAlert(alert))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.lbMono(11))
+                .foregroundStyle(LB.textTertiary)
         }
-    }
-
-    // MARK: - Block Header
-
-    private func blockHeader(index: Int, block: IntervalBlock) -> String {
-        if block.iterations > 1 {
-            return "Block \(index + 1) — \(block.iterations)x"
-        }
-        return "Block \(index + 1)"
     }
 
     // MARK: - Formatting Helpers
@@ -197,11 +301,15 @@ struct ScheduledWorkoutDetailView: View {
     /// sensible units ("20 min", "1 hr, 15 min") instead of "1,200 sec".
     private func formatDuration(_ measurement: Measurement<UnitDuration>) -> String {
         let seconds = measurement.converted(to: .seconds).value
+        return formatSeconds(seconds).isEmpty ? formatMeasurement(measurement) : formatSeconds(seconds)
+    }
+
+    private func formatSeconds(_ seconds: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute, .second]
         formatter.unitsStyle = .short
         formatter.zeroFormattingBehavior = .dropAll
-        return formatter.string(from: seconds) ?? formatMeasurement(measurement)
+        return formatter.string(from: seconds) ?? ""
     }
 
     private func formatMeasurement<T: Dimension>(_ measurement: Measurement<T>) -> String {
