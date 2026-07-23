@@ -30,18 +30,18 @@ struct MainTabView: View {
                 }
             }
 
+            Tab("Plans", systemImage: "calendar.badge.clock") {
+                NavigationStack {
+                    PlansListView(scheduleManager: scheduleManager)
+                }
+            }
+
             Tab("Trends", systemImage: "chart.line.uptrend.xyaxis") {
                 NavigationStack {
                     TrendsView(
                         apiClient: workoutManager.apiClient,
                         missedWorkoutDetector: missedWorkoutDetector
                     )
-                }
-            }
-
-            Tab("Plans", systemImage: "calendar.badge.clock") {
-                NavigationStack {
-                    PlansListView(scheduleManager: scheduleManager)
                 }
             }
         }
