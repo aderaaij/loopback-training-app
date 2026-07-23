@@ -387,7 +387,7 @@ actor HealthMetricsSyncer {
 
     private func uploadSleepSamples(_ samples: [SleepSamplePayload]) async throws -> (stored: Int, daysUpdated: Int) {
         var stored = 0
-        var daysUpdated = 0
+        var daysUpdated = Set<String>()
         let timezone = TimeZone.current.identifier
         var index = 0
         while index < samples.count {
@@ -396,10 +396,10 @@ actor HealthMetricsSyncer {
                 SleepSamplesUploadPayload(timezone: timezone, samples: chunk)
             )
             stored += response.stored
-            daysUpdated += response.daysUpdated
+            daysUpdated.formUnion(response.daysUpdated)
             index += uploadChunkSize
         }
-        return (stored, daysUpdated)
+        return (stored, daysUpdated.count)
     }
 
     private func fetchSleepSampleHistory(from startDate: Date, to endDate: Date) async throws -> [SleepSamplePayload] {
@@ -460,6 +460,9 @@ actor HealthMetricsSyncer {
     }
 
     private nonisolated static func sleepPayload(from sample: HKCategorySample) -> SleepSamplePayload? {
+        // The server 422s a whole chunk when any sample has end <= start, so
+        // degenerate zero-duration samples must never reach a payload.
+        guard sample.endDate > sample.startDate else { return nil }
         let stage: String
         switch sample.value {
         case HKCategoryValueSleepAnalysis.asleepREM.rawValue: stage = "rem"

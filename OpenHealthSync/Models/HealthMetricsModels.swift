@@ -57,7 +57,7 @@ nonisolated struct SleepSamplesUploadPayload: Codable, Sendable {
 
 nonisolated struct SleepSamplesUploadResponse: Codable, Sendable {
     let stored: Int
-    let daysUpdated: Int
+    let daysUpdated: [String]               // "yyyy-MM-dd" days whose rollups re-derived
 
     enum CodingKeys: String, CodingKey {
         case stored
