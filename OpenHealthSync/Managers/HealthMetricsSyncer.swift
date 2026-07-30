@@ -23,14 +23,31 @@ actor HealthMetricsSyncer {
     private let backfillMonths = 12
     /// Samples per POST, to keep request bodies modest on flaky mobile links.
     private let uploadChunkSize = 2000
+    /// Nutrition day rows per POST, same reasoning at day granularity.
+    private let nutritionChunkSize = 400
+
+    /// Share of a day's logged food entries that must actually carry a
+    /// micronutrient before its daily sum is sent. Below this the sum is a
+    /// partial subtotal masquerading as a total, so it's omitted instead.
+    ///
+    /// The exact figure is a judgement call, not a derived constant: 0.8 keeps
+    /// a couple of unlabelled items from voiding an otherwise complete day
+    /// while still rejecting the sparse case, where only a handful of entries
+    /// in a day carry the field.
+    private let microCoverageThreshold = 0.8
 
     /// Actor reentrancy guard: observer bursts overlap `syncMetrics` calls at
     /// its `await`s, and one in-flight sleep pass is always enough.
     private var sleepSyncInFlight = false
 
+    /// Same guard for nutrition. A food-logging app writes every nutrient of a
+    /// meal together, so one logged lunch fires the dietary observer several
+    /// times — and a nutrition pass is seventeen HealthKit queries.
+    private var nutritionSyncInFlight = false
+
     // MARK: - HealthKit Types
 
-    static let readTypes: Set<HKObjectType> = [
+    static let readTypes: Set<HKObjectType> = Set<HKObjectType>([
         HKCategoryType(.sleepAnalysis),
         HKQuantityType(.restingHeartRate),
         HKQuantityType(.heartRateVariabilitySDNN),
@@ -56,6 +73,33 @@ actor HealthMetricsSyncer {
         // Date of birth — read during onboarding to seed one age observation
         // note for the coach. Characteristic; no share access needed.
         HKCharacteristicType(.dateOfBirth),
+    ]).union(dietaryReadTypes)
+
+    /// Dietary types backing nutrition sync. Split out from `readTypes` only
+    /// for readability — they're requested in the same single authorization
+    /// call, which existing users see again on upgrade (the sheet lists just
+    /// these new types). `requestAuthorization` runs on every launch for that
+    /// reason; without it the new types stay unauthorized and every dietary
+    /// query silently returns nothing.
+    static let dietaryReadTypes: Set<HKObjectType> = [
+        HKQuantityType(.dietaryEnergyConsumed),
+        HKQuantityType(.dietaryCarbohydrates),
+        HKQuantityType(.dietaryProtein),
+        HKQuantityType(.dietaryFatTotal),
+        HKQuantityType(.dietaryFatSaturated),
+        HKQuantityType(.dietaryFiber),
+        HKQuantityType(.dietarySugar),
+        HKQuantityType(.dietarySodium),
+        HKQuantityType(.dietaryPotassium),
+        HKQuantityType(.dietaryCholesterol),
+        HKQuantityType(.dietaryWater),
+        HKQuantityType(.dietaryCaffeine),
+        // Micros. Cheap to read and free to store (they ride in the payload's
+        // open `micros` dictionary), but the key set must stay stable.
+        HKQuantityType(.dietaryIron),
+        HKQuantityType(.dietaryCalcium),
+        HKQuantityType(.dietaryMagnesium),
+        HKQuantityType(.dietaryVitaminC),
     ]
 
     init(apiClient: WorkoutAPIClient) {
@@ -97,6 +141,34 @@ actor HealthMetricsSyncer {
         }
 
         let now = Date()
+        // Captured before the quantity pass advances `lastSyncKey`, so
+        // nutrition's window reaches back from the *previous* sync rather than
+        // from this one.
+        let nutritionStart = nutritionWindowStart(now)
+
+        // The quantity error is held rather than thrown immediately: nutrition
+        // ships on its own endpoint and must still run, exactly as sleep does
+        // above. It's rethrown at the end so callers keep the old contract.
+        var quantityError: Error?
+        do {
+            try await syncQuantityMetrics(now: now)
+        } catch {
+            quantityError = error
+        }
+
+        // Nutrition ships on its own endpoint; its errors are logged rather
+        // than thrown so a food-logging hiccup can't starve the quantity
+        // metrics.
+        do {
+            try await syncNutrition(from: nutritionStart, to: now)
+        } catch {
+            AppLog.health.error("Nutrition sync failed: \(String(describing: error), privacy: .public)")
+        }
+
+        if let quantityError { throw quantityError }
+    }
+
+    private func syncQuantityMetrics(now: Date) async throws {
         let startDate: Date
 
         if let lastSync = UserDefaults.standard.object(forKey: lastSyncKey) as? Date {
@@ -190,6 +262,271 @@ actor HealthMetricsSyncer {
                 spo2: spo2Pct
             )
         }
+    }
+
+    // MARK: - Nutrition
+    //
+    // Dietary intake ships to POST /api/nutrition as whole-day totals. Every
+    // dietary quantity in HealthKit is cumulative, so each field is a
+    // `fetchSumByDay` — the same query shape steps and active energy use.
+
+    private func syncNutrition(from startDate: Date, to endDate: Date) async throws {
+        guard !nutritionSyncInFlight else { return }
+        nutritionSyncInFlight = true
+        defer { nutritionSyncInFlight = false }
+
+        let days = try await fetchNutritionDays(from: startDate, to: endDate)
+        // Nothing logged in the window is a normal state, not an error — and
+        // it's indistinguishable from denied dietary authorization, so it must
+        // never be reported as a fact about what the athlete ate.
+        guard !days.isEmpty else { return }
+
+        try await uploadNutrition(days)
+        AppLog.health.info("Synced \(days.count) days of nutrition")
+    }
+
+    /// Chunked day upsert. A rolling sync sends a handful of days and a
+    /// 12-month backfill about 365, so the chunk only ever bites if
+    /// `backfillMonths` grows a lot — it's here to bound the body, not because
+    /// today's payloads are large.
+    private func uploadNutrition(_ days: [DailyNutrition]) async throws {
+        var index = 0
+        while index < days.count {
+            let chunk = Array(days[index ..< min(index + nutritionChunkSize, days.count)])
+            try await apiClient.sendNutrition(NutritionBulkPayload(days: chunk))
+            index += nutritionChunkSize
+        }
+    }
+
+    /// Nutrition is logged retroactively — dinner entered next morning, a day
+    /// corrected days later — so the window reaches back further than the
+    /// metrics window's 1-day overlap. Statistics queries are cheap; a missed
+    /// retroactive edit is permanent.
+    ///
+    /// The `startOfDay` is load-bearing, not hygiene: these are whole-day
+    /// totals and the server upsert overwrites field-by-field, so a window edge
+    /// landing mid-day would store that day's *tail* — the exact mechanism that
+    /// corrupted July's sleep and steps.
+    private func nutritionWindowStart(_ now: Date) -> Date {
+        let lastSync = UserDefaults.standard.object(forKey: lastSyncKey) as? Date
+        let overlap = calendar.date(byAdding: .day, value: -7, to: lastSync ?? now) ?? now
+        return calendar.startOfDay(for: overlap)
+    }
+
+    private func fetchNutritionDays(from startDate: Date, to endDate: Date) async throws -> [DailyNutrition] {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.timeZone = calendar.timeZone
+
+        async let energyData = fetchSumByDay(.dietaryEnergyConsumed, unit: .kilocalorie(), from: startDate, to: endDate)
+        async let carbsData = fetchSumByDay(.dietaryCarbohydrates, unit: .gram(), from: startDate, to: endDate)
+        async let proteinData = fetchSumByDay(.dietaryProtein, unit: .gram(), from: startDate, to: endDate)
+        async let fatData = fetchSumByDay(.dietaryFatTotal, unit: .gram(), from: startDate, to: endDate)
+        async let satFatData = fetchSumByDay(.dietaryFatSaturated, unit: .gram(), from: startDate, to: endDate)
+        async let fiberData = fetchSumByDay(.dietaryFiber, unit: .gram(), from: startDate, to: endDate)
+        async let sugarData = fetchSumByDay(.dietarySugar, unit: .gram(), from: startDate, to: endDate)
+        async let sodiumData = fetchSumByDay(.dietarySodium, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let potassiumData = fetchSumByDay(.dietaryPotassium, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let cholesterolData = fetchSumByDay(.dietaryCholesterol, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let waterData = fetchSumByDay(.dietaryWater, unit: .literUnit(with: .milli), from: startDate, to: endDate)
+        async let caffeineData = fetchSumByDay(.dietaryCaffeine, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let ironData = fetchSumByDay(.dietaryIron, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let calciumData = fetchSumByDay(.dietaryCalcium, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let magnesiumData = fetchSumByDay(.dietaryMagnesium, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let vitaminCData = fetchSumByDay(.dietaryVitaminC, unit: .gramUnit(with: .milli), from: startDate, to: endDate)
+        async let entryData = fetchDietaryEntries(from: startDate, to: endDate)
+        // Coverage counts for the gate below: how many of a day's logged
+        // entries actually carried each micronutrient.
+        async let ironCountData = fetchSampleCountByDay(.dietaryIron, from: startDate, to: endDate)
+        async let calciumCountData = fetchSampleCountByDay(.dietaryCalcium, from: startDate, to: endDate)
+        async let magnesiumCountData = fetchSampleCountByDay(.dietaryMagnesium, from: startDate, to: endDate)
+        async let vitaminCCountData = fetchSampleCountByDay(.dietaryVitaminC, from: startDate, to: endDate)
+
+        let energy = (try? await energyData) ?? [:]
+        let carbs = (try? await carbsData) ?? [:]
+        let protein = (try? await proteinData) ?? [:]
+        let fat = (try? await fatData) ?? [:]
+        let satFat = (try? await satFatData) ?? [:]
+        let fiber = (try? await fiberData) ?? [:]
+        let sugar = (try? await sugarData) ?? [:]
+        let sodium = (try? await sodiumData) ?? [:]
+        let potassium = (try? await potassiumData) ?? [:]
+        let cholesterol = (try? await cholesterolData) ?? [:]
+        let water = (try? await waterData) ?? [:]
+        let caffeine = (try? await caffeineData) ?? [:]
+        let iron = (try? await ironData) ?? [:]
+        let calcium = (try? await calciumData) ?? [:]
+        let magnesium = (try? await magnesiumData) ?? [:]
+        let vitaminC = (try? await vitaminCData) ?? [:]
+        let entries = (try? await entryData) ?? (counts: [:], sources: [:])
+        let ironCount = (try? await ironCountData) ?? [:]
+        let calciumCount = (try? await calciumCountData) ?? [:]
+        let magnesiumCount = (try? await magnesiumCountData) ?? [:]
+        let vitaminCCount = (try? await vitaminCCountData) ?? [:]
+
+        // Only days that actually carry a dietary sample get a row. Every date
+        // here came from some dictionary's keys, so a row is never all-null.
+        var allDates = Set<Date>()
+        for dict in [energy, carbs, protein, fat, satFat, fiber, sugar, sodium,
+                     potassium, cholesterol, water, caffeine,
+                     iron, calcium, magnesium, vitaminC] {
+            allDates.formUnion(dict.keys)
+        }
+        allDates.formUnion(entries.counts.keys)
+
+        // How many micro readings were dropped as too sparse to mean anything,
+        // logged once per pass so the gate's effect is visible rather than
+        // silent.
+        var suppressedMicros = 0
+
+        /// True when enough of the day's logged entries carried the nutrient for
+        /// its daily sum to be worth sending. See `microCoverageThreshold`.
+        func isCovered(_ sampleCounts: [Date: Int], on dayStart: Date) -> Bool {
+            // No entry count means coverage can't be computed at all, and an
+            // unverifiable reading is treated exactly like a sparse one.
+            guard let logged = entries.counts[dayStart], logged > 0,
+                  let withNutrient = sampleCounts[dayStart] else { return false }
+            return Double(withNutrient) / Double(logged) >= microCoverageThreshold
+        }
+
+        let days = allDates.sorted().map { dayStart in
+            // A micronutrient sum over a sparse subset of entries is not a
+            // daily total — food databases carry macros on nearly every entry
+            // and micros on a fraction, and `cumulativeSum` faithfully adds up
+            // only the few that had the field. Sending one anyway produced iron
+            // at ~10% of any plausible intake, which reads to the coach as
+            // severe deficiency. So a micro ships only when it's well covered;
+            // otherwise it's omitted, which the server already reads as "not
+            // tracked" rather than zero.
+            //
+            // This also means the field heals itself: a food logger with
+            // complete nutrient data (Cronometer and similar pull from
+            // USDA/NCCDB) clears the threshold on its own, and `sources`
+            // records which app earned the trust.
+            var micros: [String: Double] = [:]
+            for (key, values, counts) in [
+                ("iron_mg", iron, ironCount),
+                ("calcium_mg", calcium, calciumCount),
+                ("magnesium_mg", magnesium, magnesiumCount),
+                ("vitamin_c_mg", vitaminC, vitaminCCount),
+            ] {
+                guard let value = values[dayStart] else { continue }
+                if isCovered(counts, on: dayStart) {
+                    micros[key] = value
+                } else {
+                    suppressedMicros += 1
+                }
+            }
+
+            return DailyNutrition(
+                date: dateFormatter.string(from: dayStart),
+                energyKcal: energy[dayStart],
+                carbsG: carbs[dayStart],
+                proteinG: protein[dayStart],
+                fatG: fat[dayStart],
+                saturatedFatG: satFat[dayStart],
+                fiberG: fiber[dayStart],
+                sugarG: sugar[dayStart],
+                sodiumMg: sodium[dayStart],
+                potassiumMg: potassium[dayStart],
+                cholesterolMg: cholesterol[dayStart],
+                waterMl: water[dayStart],
+                caffeineMg: caffeine[dayStart],
+                micros: micros.isEmpty ? nil : micros,
+                entryCount: entries.counts[dayStart],
+                sources: entries.sources[dayStart],
+                // Today's totals are always incomplete — the athlete hasn't
+                // finished eating. The value is real, just partial; the flag
+                // keeps it out of server-side averages until a later sync
+                // re-sends the day complete.
+                partial: calendar.isDateInToday(dayStart)
+            )
+        }
+
+        if suppressedMicros > 0 {
+            AppLog.health.info("Nutrition: omitted \(suppressedMicros) micronutrient reading(s) across \(days.count) day(s) — too few logged entries carried them to be a daily total")
+        }
+        return days
+    }
+
+    /// Entry count and writing apps per day, from one sample query over the
+    /// whole window (not one per day). Dietary energy stands in for every
+    /// nutrient: food-logging apps write a meal's nutrients together.
+    private func fetchDietaryEntries(
+        from startDate: Date,
+        to endDate: Date
+    ) async throws -> (counts: [Date: Int], sources: [Date: [String]]) {
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: HKQuantityType(.dietaryEnergyConsumed),
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                var counts: [Date: Int] = [:]
+                var sources: [Date: Set<String>] = [:]
+                for sample in samples ?? [] {
+                    let dayStart = self.calendar.startOfDay(for: sample.startDate)
+                    counts[dayStart, default: 0] += 1
+                    sources[dayStart, default: []].insert(sample.sourceRevision.source.name)
+                }
+                continuation.resume(returning: (counts, sources.mapValues { $0.sorted() }))
+            }
+
+            healthStore.execute(query)
+        }
+    }
+
+    /// Number of samples per day for one dietary type. Paired with the dietary
+    /// entry count, this measures what share of a day's logged food actually
+    /// reported the nutrient — the difference between a daily total and a sum
+    /// over whichever entries happened to carry the field.
+    private func fetchSampleCountByDay(
+        _ identifier: HKQuantityTypeIdentifier,
+        from startDate: Date,
+        to endDate: Date
+    ) async throws -> [Date: Int] {
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: HKQuantityType(identifier),
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                var counts: [Date: Int] = [:]
+                for sample in samples ?? [] {
+                    counts[self.calendar.startOfDay(for: sample.startDate), default: 0] += 1
+                }
+                continuation.resume(returning: counts)
+            }
+
+            healthStore.execute(query)
+        }
+    }
+
+    /// Most recent body-mass reading within the last 90 days. Read locally for
+    /// the Trends screen's protein-per-kg figure — the app already holds
+    /// body-mass authorization, so one number doesn't need a server round-trip.
+    func latestBodyMassKg() async -> Double? {
+        let end = Date()
+        guard let start = calendar.date(byAdding: .day, value: -90, to: end) else { return nil }
+        let byDay = (try? await fetchLatestByDay(
+            .bodyMass, unit: .gramUnit(with: .kilo), from: start, to: end
+        )) ?? [:]
+        return byDay.max { $0.key < $1.key }?.value
     }
 
     // MARK: - Sum by Day (steps, active energy)
@@ -363,10 +700,16 @@ actor HealthMetricsSyncer {
     /// `backfillMonths` of raw sleep samples (the server stores each once),
     /// then recomputes the quantity metrics over the same window as whole-day
     /// totals and lets the server overwrite — which heals the tail-of-day
-    /// truncated steps/energy values the old delta window left behind.
+    /// truncated steps/energy values the old delta window left behind. Finally
+    /// it re-reads dietary intake over the same window, which is how a fresh
+    /// install gets intake history at all: the rolling sync only reaches back a
+    /// week, so anything older would otherwise never be uploaded. It also
+    /// clears any day left stuck at `partial: true` by a sync gap wider than
+    /// the rolling window.
+    ///
     /// Settings exposes a manual trigger for re-runs.
     @discardableResult
-    func backfillHealthHistory() async throws -> (stored: Int, daysUpdated: Int) {
+    func backfillHealthHistory() async throws -> HealthHistoryBackfillResult {
         let end = Date()
         let start = calendar.startOfDay(
             for: calendar.date(byAdding: .month, value: -backfillMonths, to: end) ?? end
@@ -380,9 +723,29 @@ actor HealthMetricsSyncer {
             try await apiClient.sendHealthMetrics(HealthMetricsBulkPayload(metrics: metrics))
         }
 
+        // Nutrition is isolated even here, where a human is watching: sleep and
+        // metrics have already landed by this point, so letting a nutrition
+        // failure throw would report the whole repair as failed. A server
+        // without the endpoint yet is exactly that case.
+        var nutritionDays: Int?
+        do {
+            let days = try await fetchNutritionDays(from: start, to: end)
+            if !days.isEmpty {
+                try await uploadNutrition(days)
+            }
+            nutritionDays = days.count
+        } catch {
+            AppLog.health.error("History backfill: nutrition failed: \(String(describing: error), privacy: .public)")
+        }
+
         UserDefaults.standard.set(true, forKey: backfillDoneKey)
-        AppLog.health.info("History backfill: sent \(samples.count) sleep samples (server stored \(result.stored) across \(result.daysUpdated) day(s)) and \(metrics.count) days of metrics")
-        return result
+        AppLog.health.info("History backfill: sent \(samples.count) sleep samples (server stored \(result.stored) across \(result.daysUpdated) day(s)), \(metrics.count) days of metrics, and \(nutritionDays.map(String.init) ?? "no") days of nutrition")
+        return HealthHistoryBackfillResult(
+            sleepSamplesStored: result.stored,
+            daysUpdated: result.daysUpdated,
+            metricDays: metrics.count,
+            nutritionDays: nutritionDays
+        )
     }
 
     private func uploadSleepSamples(_ samples: [SleepSamplePayload]) async throws -> (stored: Int, daysUpdated: Int) {
@@ -480,6 +843,21 @@ actor HealthMetricsSyncer {
             source: sample.sourceRevision.source.bundleIdentifier
         )
     }
+}
+
+// MARK: - Backfill result
+
+/// What one run of `backfillHealthHistory()` actually landed, so Settings can
+/// report it instead of guessing. `nonisolated` because it crosses from the
+/// syncer actor to the main actor (types default to @MainActor here).
+///
+/// `nutritionDays` is nil when the nutrition leg failed — distinct from 0,
+/// which means it succeeded and there was simply nothing logged.
+nonisolated struct HealthHistoryBackfillResult: Sendable {
+    let sleepSamplesStored: Int
+    let daysUpdated: Int
+    let metricDays: Int
+    let nutritionDays: Int?
 }
 
 // MARK: - HKUnit helpers

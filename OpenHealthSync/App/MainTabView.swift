@@ -41,7 +41,8 @@ struct MainTabView: View {
                 NavigationStack {
                     TrendsView(
                         apiClient: workoutManager.apiClient,
-                        missedWorkoutDetector: missedWorkoutDetector
+                        missedWorkoutDetector: missedWorkoutDetector,
+                        healthMetricsSyncer: healthMetricsSyncer
                     )
                 }
             }

@@ -453,6 +453,32 @@ actor WorkoutAPIClient {
         return try Self.decoder.decode(SleepSamplesUploadResponse.self, from: data)
     }
 
+    // MARK: - Nutrition
+
+    /// Bulk day upsert, same contract as `sendHealthMetrics`: null fields never
+    /// overwrite stored values, and days with nothing logged are absent from
+    /// the payload rather than zeroed.
+    @discardableResult
+    func sendNutrition(_ payload: NutritionBulkPayload) async throws -> HealthMetricsSyncResponse {
+        let (data, _) = try await perform("POST", "api/nutrition", body: Self.encoder.encode(payload))
+        return try Self.decoder.decode(HealthMetricsSyncResponse.self, from: data)
+    }
+
+    /// Daily nutrition rows for a date range, newest-agnostic (the Trends
+    /// segment sorts them itself). Bounds are "yyyy-MM-dd". Unlogged days are
+    /// simply absent from the response — that's "not tracked", not zero.
+    func fetchNutrition(startDate: String, endDate: String? = nil, limit: Int? = nil) async throws -> [DailyNutrition] {
+        var query = [URLQueryItem(name: "start_date", value: startDate)]
+        if let endDate {
+            query.append(URLQueryItem(name: "end_date", value: endDate))
+        }
+        if let limit {
+            query.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        let response: NutritionDaysResponse = try await request("GET", "api/nutrition", query: query)
+        return response.days
+    }
+
     // MARK: - Plan Notes (coach memory)
 
     /// Fetches existing notes for a conversation (used to dedupe onboarding

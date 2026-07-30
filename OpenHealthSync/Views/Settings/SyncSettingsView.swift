@@ -17,7 +17,10 @@ struct SyncSettingsView: View {
     private enum BackfillState: Equatable {
         case idle
         case running
-        case done(stored: Int)
+        /// `nutritionDays` is nil when the nutrition leg failed while sleep and
+        /// metrics landed — reported rather than hidden, since the two halves
+        /// succeed independently.
+        case done(stored: Int, nutritionDays: Int?)
         case failed
     }
 
@@ -51,12 +54,23 @@ struct SyncSettingsView: View {
                 .disabled(backfillState == .running)
 
                 switch backfillState {
-                case .done(let stored):
+                case .done(let stored, let nutritionDays):
                     Text(stored > 0
                          ? "Done — \(stored) new sleep sample\(stored == 1 ? "" : "s") stored and daily totals rebuilt."
                          : "Done — daily totals rebuilt; the server already had every sleep sample.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let nutritionDays {
+                        Text(nutritionDays > 0
+                             ? "Uploaded \(nutritionDays) day\(nutritionDays == 1 ? "" : "s") of logged food."
+                             : "No food logged in Apple Health over that period — or Nutrition isn't shared with Loopback.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Nutrition couldn't be uploaded; everything else landed. Try again later.")
+                            .font(.caption)
+                            .foregroundStyle(LB.amber)
+                    }
                 case .failed:
                     Text("Upload failed. Check the server connection and try again.")
                         .font(.caption)
@@ -67,7 +81,7 @@ struct SyncSettingsView: View {
             } header: {
                 Text("History")
             } footer: {
-                Text("Re-reads the last 12 months from Apple Health — raw sleep samples plus daily totals like steps and energy — and uploads everything to your server, which rebuilds its records. Safe to run repeatedly.")
+                Text("Re-reads the last 12 months from Apple Health — raw sleep samples, daily totals like steps and energy, and logged food — and uploads everything to your server, which rebuilds its records. Safe to run repeatedly.")
             }
 
             Section {
@@ -97,7 +111,10 @@ struct SyncSettingsView: View {
         Task {
             do {
                 let result = try await healthMetricsSyncer.backfillHealthHistory()
-                backfillState = .done(stored: result.stored)
+                backfillState = .done(
+                    stored: result.sleepSamplesStored,
+                    nutritionDays: result.nutritionDays
+                )
             } catch {
                 backfillState = .failed
             }

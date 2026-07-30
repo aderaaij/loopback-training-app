@@ -13,13 +13,14 @@ import SwiftUI
 struct TrendsView: View {
     let apiClient: WorkoutAPIClient
     var missedWorkoutDetector: MissedWorkoutDetector
+    let healthMetricsSyncer: HealthMetricsSyncer
 
     private enum LoadState {
         case loading, loaded, failed
     }
 
     private enum Segment {
-        case mileage, missed
+        case mileage, nutrition, missed
     }
 
     @State private var rows: [ServerWorkoutSummaryRow] = []
@@ -31,6 +32,11 @@ struct TrendsView: View {
             switch segment {
             case .mileage:
                 mileageContent
+            case .nutrition:
+                NutritionTrendsView(
+                    apiClient: apiClient,
+                    healthMetricsSyncer: healthMetricsSyncer
+                )
             case .missed:
                 MissedDayStatsView(detector: missedWorkoutDetector)
             }
@@ -41,10 +47,11 @@ struct TrendsView: View {
             ToolbarItem(placement: .principal) {
                 Picker("Section", selection: $segment) {
                     Text("Mileage").tag(Segment.mileage)
-                    Text("Missed Days").tag(Segment.missed)
+                    Text("Fuel").tag(Segment.nutrition)
+                    Text("Missed").tag(Segment.missed)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 220)
+                .frame(width: 260)
             }
         }
         .task { await load() }
@@ -149,30 +156,11 @@ struct TrendsView: View {
         VStack(alignment: .leading, spacing: 10) {
             LBSectionHeader(title: title)
             HStack(spacing: 10) {
-                statTile(value: formatKm(totals.distance / 1000), label: "km")
-                statTile(value: "\(totals.runs)", label: "Runs")
-                statTile(value: formatHours(totals.duration), label: "Time")
+                LBTrendTile(value: formatKm(totals.distance / 1000), label: "km")
+                LBTrendTile(value: "\(totals.runs)", label: "Runs")
+                LBTrendTile(value: formatHours(totals.duration), label: "Time")
             }
         }
-    }
-
-    private func statTile(value: String, label: String) -> some View {
-        VStack(spacing: 5) {
-            Text(value)
-                .font(.lbMono(22, .semibold))
-                .foregroundStyle(LB.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label.uppercased())
-                .font(.lbBody(10, .semibold))
-                .tracking(0.5)
-                .foregroundStyle(LB.textTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .lbCard()
     }
 
     // MARK: - Monthly bars

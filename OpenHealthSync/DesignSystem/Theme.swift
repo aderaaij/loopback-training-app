@@ -240,6 +240,39 @@ struct LBSectionHeader: View {
     }
 }
 
+// MARK: - Trend tile (big mono number over a tracked caption)
+
+/// One number in a row of card tiles on the Trends screens — year mileage,
+/// average intake, logging coverage. Sized to sit three-across on the narrowest
+/// supported iPhone, which is why both labels scale down rather than wrap.
+///
+/// Distinct from `LBStatTile`, the left-aligned display-font tile the workout
+/// detail screen uses; this is the centered mono variant.
+struct LBTrendTile: View {
+    let value: String
+    let label: String
+    var valueColor: Color = LB.textPrimary
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text(value)
+                .font(.lbMono(22, .semibold))
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label.uppercased())
+                .font(.lbBody(10, .semibold))
+                .tracking(0.5)
+                .foregroundStyle(LB.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .lbCard()
+    }
+}
+
 // MARK: - Status chip (DONE / SYNCED / PENDING / SKIPPED …)
 
 struct LBStatusChip: View {

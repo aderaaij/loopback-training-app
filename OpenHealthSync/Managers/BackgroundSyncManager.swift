@@ -54,6 +54,13 @@ class BackgroundSyncManager {
             (HKQuantityType(.bodyMass), .immediate),
             (HKQuantityType(.stepCount), .hourly),
             (HKQuantityType(.activeEnergyBurned), .hourly),
+            // One dietary observer covers all of nutrition: food-logging apps
+            // write every nutrient of a meal together, so an energy sample
+            // landing means the rest did too, and syncMetrics() re-reads
+            // everything anyway. `.hourly` on purpose — a logged lunch isn't
+            // time-critical, and `.immediate` on a type that fires several
+            // times per meal is wasted wakeups.
+            (HKQuantityType(.dietaryEnergyConsumed), .hourly),
         ]
 
         for (type, frequency) in healthTypes {

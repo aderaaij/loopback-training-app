@@ -75,6 +75,9 @@ nonisolated struct HealthMetricsBulkPayload: Codable, Sendable {
 
 // MARK: - Sync Response
 
-struct HealthMetricsSyncResponse: Codable, Sendable {
+// Shared by the metrics and nutrition upserts, which both answer
+// `{"upserted": N}`. `nonisolated` for the same reason as the payloads above:
+// the nutrition upload decodes this from inside the WorkoutAPIClient actor.
+nonisolated struct HealthMetricsSyncResponse: Codable, Sendable {
     let upserted: Int
 }
