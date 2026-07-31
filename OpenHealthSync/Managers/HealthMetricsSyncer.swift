@@ -16,6 +16,10 @@ actor HealthMetricsSyncer {
     private let lastSyncKey = "healthMetricsLastSyncDate"
     private let sleepAnchorKey = "sleepSamplesAnchor"
     private let backfillDoneKey = "healthHistoryBackfillDone"
+    /// Separate from `backfillDoneKey`, which is already `true` on every
+    /// install that shipped before basal energy existed and so can never
+    /// re-run. See `syncQuantityMetrics` for what this one-shot does.
+    private let basalBackfillKey = "basalEnergyBackfillDone"
     private let calendar = Calendar.current
 
     /// How far the one-shot history backfill reaches. A year comfortably
@@ -55,6 +59,7 @@ actor HealthMetricsSyncer {
         HKQuantityType(.vo2Max),
         HKQuantityType(.stepCount),
         HKQuantityType(.activeEnergyBurned),
+        HKQuantityType(.basalEnergyBurned),
         HKQuantityType(.bodyFatPercentage),
         HKQuantityType(.leanBodyMass),
         HKQuantityType(.respiratoryRate),
@@ -171,7 +176,19 @@ actor HealthMetricsSyncer {
     private func syncQuantityMetrics(now: Date) async throws {
         let startDate: Date
 
-        if let lastSync = UserDefaults.standard.object(forKey: lastSyncKey) as? Date {
+        // One-shot deep pass the first time a build with basal energy syncs.
+        // Basal is a new read type, so every day already stored carries a null
+        // in that column while the Watch has been writing basal the whole time;
+        // widening the window once fills them in. Safe against the existing
+        // rows — the server upserts field-by-field, and every other metric in
+        // the window recomputes to the same whole-day value it already holds.
+        let isBasalBackfill = !UserDefaults.standard.bool(forKey: basalBackfillKey)
+
+        if isBasalBackfill {
+            startDate = calendar.startOfDay(
+                for: calendar.date(byAdding: .month, value: -backfillMonths, to: now) ?? now
+            )
+        } else if let lastSync = UserDefaults.standard.object(forKey: lastSyncKey) as? Date {
             // Overlap by 1 day for upsert safety. The window must open on a
             // local midnight: these are whole-day totals and the server
             // upsert overwrites whole fields, so a window edge landing
@@ -191,6 +208,11 @@ actor HealthMetricsSyncer {
         try await apiClient.sendHealthMetrics(payload)
 
         UserDefaults.standard.set(now, forKey: lastSyncKey)
+        // Only after the upload landed: a throw above leaves the flag unset so
+        // the next sync retries the deep pass rather than skipping it forever.
+        if isBasalBackfill {
+            UserDefaults.standard.set(true, forKey: basalBackfillKey)
+        }
         AppLog.health.info("Synced \(metrics.count) days of health metrics")
     }
 
@@ -210,6 +232,9 @@ actor HealthMetricsSyncer {
         async let vo2Data = fetchAverageByDay(.vo2Max, unit: HKUnit(from: "ml/kg*min"), from: startDate, to: endDate)
         async let stepsData = fetchSumByDay(.stepCount, unit: .count(), from: startDate, to: endDate)
         async let energyData = fetchSumByDay(.activeEnergyBurned, unit: .kilocalorie(), from: startDate, to: endDate)
+        // Cumulative like active energy, so the same whole-day sum applies —
+        // and the same midnight-snapped window is what keeps it whole.
+        async let basalData = fetchSumByDay(.basalEnergyBurned, unit: .kilocalorie(), from: startDate, to: endDate)
         async let bodyFatData = fetchLatestByDay(.bodyFatPercentage, unit: .percent(), from: startDate, to: endDate)
         async let leanMassData = fetchLatestByDay(.leanBodyMass, unit: .gramUnit(with: .kilo), from: startDate, to: endDate)
         async let respRateData = fetchAverageByDay(.respiratoryRate, unit: .beatsPerMinute(), from: startDate, to: endDate)
@@ -221,6 +246,7 @@ actor HealthMetricsSyncer {
         let vo2 = (try? await vo2Data) ?? [:]
         let steps = (try? await stepsData) ?? [:]
         let energy = (try? await energyData) ?? [:]
+        let basal = (try? await basalData) ?? [:]
         let bodyFat = (try? await bodyFatData) ?? [:]
         let leanMass = (try? await leanMassData) ?? [:]
         let respRate = (try? await respRateData) ?? [:]
@@ -228,7 +254,7 @@ actor HealthMetricsSyncer {
 
         // Collect all dates that have any data
         var allDates = Set<Date>()
-        for dict in [restingHR, hrv, weight, vo2, steps, energy, bodyFat, leanMass, respRate, spo2] {
+        for dict in [restingHR, hrv, weight, vo2, steps, energy, basal, bodyFat, leanMass, respRate, spo2] {
             allDates.formUnion(dict.keys)
         }
 
@@ -239,6 +265,7 @@ actor HealthMetricsSyncer {
             let hasAnyMetric = restingHR[dayStart] != nil || hrv[dayStart] != nil ||
                 weight[dayStart] != nil || vo2[dayStart] != nil ||
                 steps[dayStart] != nil || energy[dayStart] != nil ||
+                basal[dayStart] != nil ||
                 bodyFat[dayStart] != nil || leanMass[dayStart] != nil ||
                 respRate[dayStart] != nil || spo2[dayStart] != nil
 
@@ -256,6 +283,7 @@ actor HealthMetricsSyncer {
                 vo2Max: vo2[dayStart],
                 steps: steps[dayStart].map { Int($0) },
                 activeEnergyBurned: energy[dayStart],
+                basalEnergyBurned: basal[dayStart],
                 bodyFatPercentage: bodyFatPct,
                 leanBodyMass: leanMass[dayStart],
                 respiratoryRate: respRate[dayStart],
@@ -739,6 +767,9 @@ actor HealthMetricsSyncer {
         }
 
         UserDefaults.standard.set(true, forKey: backfillDoneKey)
+        // This pass already covered the same window with basal included, so a
+        // fresh install needn't turn round and repeat it in syncQuantityMetrics.
+        UserDefaults.standard.set(true, forKey: basalBackfillKey)
         AppLog.health.info("History backfill: sent \(samples.count) sleep samples (server stored \(result.stored) across \(result.daysUpdated) day(s)), \(metrics.count) days of metrics, and \(nutritionDays.map(String.init) ?? "no") days of nutrition")
         return HealthHistoryBackfillResult(
             sleepSamplesStored: result.stored,

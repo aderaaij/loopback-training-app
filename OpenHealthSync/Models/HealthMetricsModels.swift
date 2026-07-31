@@ -20,6 +20,10 @@ struct DailyHealthMetrics: Codable, Sendable {
     let vo2Max: Double?                     // mL/kg/min
     let steps: Int?
     let activeEnergyBurned: Double?         // kcal
+    // Resting/BMR burn, as the Watch estimates it. Paired with the active
+    // figure above this is the whole of TDEE — workout calories are already
+    // inside `activeEnergyBurned`, so adding them again double-counts.
+    let basalEnergyBurned: Double?          // kcal
     let bodyFatPercentage: Double?          // 0-100
     let leanBodyMass: Double?               // kg
     let respiratoryRate: Double?            // breaths/min
@@ -33,6 +37,7 @@ struct DailyHealthMetrics: Codable, Sendable {
         case vo2Max = "vo2_max"
         case steps
         case activeEnergyBurned = "active_energy_burned"
+        case basalEnergyBurned = "basal_energy_burned"
         case bodyFatPercentage = "body_fat_percentage"
         case leanBodyMass = "lean_body_mass"
         case respiratoryRate = "respiratory_rate"
