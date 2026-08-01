@@ -20,58 +20,63 @@ class BackgroundSyncManager {
     private let workoutManager: WorkoutManager
     private let healthMetricsSyncer: HealthMetricsSyncer
 
-    private var observerQueries: [HKObserverQuery] = []
-    private var isSetUp = false
+    private var observerQueries: [(query: HKObserverQuery, type: HKSampleType)] = []
+    /// The domain set the live observers were registered for, so a repeat call
+    /// with the same consent is free and a changed one rebuilds.
+    private var activeDomains: DataDomains?
 
     init(workoutManager: WorkoutManager, healthMetricsSyncer: HealthMetricsSyncer) {
         self.workoutManager = workoutManager
         self.healthMetricsSyncer = healthMetricsSyncer
     }
 
-    /// Call once after HealthKit authorization. Registers observer queries
-    /// and enables background delivery for workouts and key health metrics.
-    func setUp() async {
-        guard !isSetUp else { return }
+    /// Registers observer queries and enables background delivery for the
+    /// consented domains only — iOS should never wake us for data the athlete
+    /// hasn't shared, since the sync path would discard it anyway.
+    ///
+    /// Safe to call repeatedly. Call it again whenever consent changes: a
+    /// different domain set tears the old observers down and rebuilds.
+    func setUp(domains: DataDomains) async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        isSetUp = true
+        guard domains != activeDomains else { return }
+
+        await tearDown()
+        activeDomains = domains
         isActive = true
 
-        // Observe new workouts
-        await enableObserver(
-            for: HKWorkoutType.workoutType(),
-            frequency: .immediate
-        ) { [weak self] in
-            guard let self else { return }
-            AppLog.health.info("New workout detected, extracting")
-            await self.workoutManager.extractNewWorkouts()
-        }
-
-        // Observe key health metrics that change daily
-        let healthTypes: [(HKSampleType, HKUpdateFrequency)] = [
-            (HKCategoryType(.sleepAnalysis), .hourly),
-            (HKQuantityType(.restingHeartRate), .hourly),
-            (HKQuantityType(.heartRateVariabilitySDNN), .hourly),
-            (HKQuantityType(.bodyMass), .immediate),
-            (HKQuantityType(.stepCount), .hourly),
-            (HKQuantityType(.activeEnergyBurned), .hourly),
-            // One dietary observer covers all of nutrition: food-logging apps
-            // write every nutrient of a meal together, so an energy sample
-            // landing means the rest did too, and syncMetrics() re-reads
-            // everything anyway. `.hourly` on purpose — a logged lunch isn't
-            // time-critical, and `.immediate` on a type that fires several
-            // times per meal is wasted wakeups.
-            (HKQuantityType(.dietaryEnergyConsumed), .hourly),
-        ]
-
-        for (type, frequency) in healthTypes {
-            await enableObserver(for: type, frequency: frequency) { [weak self] in
-                guard let self else { return }
-                AppLog.health.info("Health data updated (\(type.identifier, privacy: .public)), syncing metrics")
-                try? await self.healthMetricsSyncer.syncMetrics()
+        for domain in domains.elements {
+            for (type, frequency) in domain.observedTypes {
+                // Workouts drive extraction; everything else drives the metrics
+                // pass, which re-reads its whole window and so doesn't care
+                // which type woke it.
+                let isWorkout = domain == .training
+                await enableObserver(for: type, frequency: frequency) { [weak self] in
+                    guard let self else { return }
+                    if isWorkout {
+                        AppLog.health.info("New workout detected, extracting")
+                        await self.workoutManager.extractNewWorkouts()
+                    } else {
+                        AppLog.health.info("Health data updated (\(type.identifier, privacy: .public)), syncing metrics")
+                        try? await self.healthMetricsSyncer.syncMetrics()
+                    }
+                }
             }
         }
 
-        AppLog.health.info("Registered \(self.observerQueries.count) background observers")
+        AppLog.health.info("Registered \(self.observerQueries.count) background observers for \(domains.wireValues.joined(separator: ", "), privacy: .public)")
+    }
+
+    /// Stops every live observer and hands background delivery back to iOS.
+    /// Withdrawing consent has to reach this far — a still-registered observer
+    /// keeps waking the app for data it no longer has any right to read.
+    func tearDown() async {
+        for (query, type) in observerQueries {
+            healthStore.stop(query)
+            try? await healthStore.disableBackgroundDelivery(for: type)
+        }
+        observerQueries.removeAll()
+        activeDomains = nil
+        isActive = false
     }
 
     // MARK: - Private
@@ -104,6 +109,7 @@ class BackgroundSyncManager {
         }
 
         healthStore.execute(query)
-        observerQueries.append(query)
+        // Kept with its type so `tearDown` can hand background delivery back.
+        observerQueries.append((query, sampleType))
     }
 }

@@ -106,25 +106,123 @@ extension OnboardingView {
             Spacer()
 
             VStack(spacing: 14) {
-                Text("Connect Apple Health so your coach can see your runs, sleep and recovery.")
+                Text("A few questions so your coach knows who it's training. You choose what it gets to see.")
                     .font(.lbBody(13))
                     .foregroundStyle(LB.textTertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
 
-                // No skip here: the system sheet is the real decision point
-                // (enable all, some, or nothing), and it only shows once per
-                // install — so passing through it here prevents it ambushing
-                // the athlete later when the health pipeline starts.
+                // No HealthKit prompt here. The system sheet shows once per
+                // install and can't be re-shown, so it has to come after the
+                // athlete knows what's being asked for and has picked the
+                // domains — that's the data-sharing step, two on from here.
+                primaryButton("Get started") {
+                    withAnimation { model.advance() }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    // MARK: Step A2 — What to share
+
+    var dataSharingStep: some View {
+        VStack(spacing: 0) {
+            // No top-bar skip: this step's own "Not now" is the skip, and it
+            // records a real choice instead of leaving intent undefined.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    progressDots
+                        .padding(.horizontal, 20)
+                        .padding(.top, 22)
+                    stepTitle("What should your coach see?")
+
+                    Text("Everything stays on your own server. Turn any of this off now or later — the coach simply won't be given those tools.")
+                        .font(.lbBody(14))
+                        .foregroundStyle(LB.textSecondary)
+                        .padding(.horizontal, 20)
+
+                    VStack(spacing: 10) {
+                        ForEach(DataDomains.ordered, id: \.rawValue) { domain in
+                            domainCard(domain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.bottom, 20)
+            }
+
+            VStack(spacing: 4) {
                 primaryButton("Connect Apple Health") {
                     Task {
                         await model.connectHealthKit()
                         withAnimation { model.advance() }
                     }
                 }
-                .padding(.bottom, 8)
+
+                Button {
+                    Task {
+                        await model.declineHealthSharing()
+                        withAnimation { model.advance() }
+                    }
+                } label: {
+                    Text("Not now — just coach my running")
+                        .font(.lbBody(14, .medium))
+                        .foregroundStyle(LB.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 18)
             }
         }
+    }
+
+    private func domainCard(_ domain: DataDomains) -> some View {
+        let on = model.sharedDomains.contains(domain)
+        let locked = domain.isRequired
+        return Button {
+            withAnimation(.easeInOut(duration: 0.15)) { model.toggleDomain(domain) }
+        } label: {
+            HStack(spacing: 13) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(domain.tint.opacity(on ? 0.16 : 0.08))
+                    .frame(width: 38, height: 38)
+                    .overlay(
+                        Image(systemName: domain.symbol)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(domain.tint.opacity(on ? 1 : 0.45))
+                    )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(domain.title)
+                        .font(.lbDisplay(16, .semibold))
+                        .foregroundStyle(LB.textPrimary)
+                    Text(domain.rationale)
+                        .font(.lbBody(13))
+                        .foregroundStyle(LB.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                if locked {
+                    Text("ALWAYS")
+                        .font(.lbMono(9.5))
+                        .tracking(0.9)
+                        .foregroundStyle(LB.textMuted)
+                } else {
+                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 21))
+                        .foregroundStyle(on ? domain.tint : LB.textMuted)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .lbCard(fill: on ? LB.surface : LB.surfaceSunken,
+                    border: on ? domain.tint.opacity(0.4) : LB.line)
+        }
+        .buttonStyle(.plain)
+        .disabled(locked)
     }
 
     // MARK: Step A — Goal

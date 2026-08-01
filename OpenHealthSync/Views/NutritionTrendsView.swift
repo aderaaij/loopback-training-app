@@ -82,9 +82,14 @@ struct NutritionTrendsView: View {
     /// Re-requests HealthKit authorization (idempotent for types already
     /// decided, and the only way newly-added dietary types get granted) and
     /// runs a sync, then reloads. Backs the empty state's one action.
+    ///
+    /// This screen only renders when nutrition is shared — Trends drops the
+    /// Fuel segment otherwise — so the request covers the athlete's current
+    /// domains rather than nutrition alone, picking up anything a previous
+    /// build hadn't asked for yet.
     private func syncNow() async {
         isSyncing = true
-        _ = await healthMetricsSyncer.requestAuthorization()
+        await healthMetricsSyncer.requestAuthorization(for: DataConsent.current)
         try? await healthMetricsSyncer.syncMetrics()
         isSyncing = false
         await load()

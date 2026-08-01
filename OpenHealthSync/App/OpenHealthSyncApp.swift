@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import WorkoutKit
+import os
 
 @main
 struct LoopbackApp: App {
@@ -20,8 +21,12 @@ struct LoopbackApp: App {
     @State private var session: SessionStore
 
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
-    @AppStorage("healthMetricsSyncEnabled") private var healthMetricsSyncEnabled: Bool = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
+    /// The athlete's intent. `migrateIfNeeded()` in `init` guarantees the key
+    /// exists, so the default here is only a formality.
+    @AppStorage(DataConsent.appStorageKey) private var domainsRaw: Int = DataDomains.required.rawValue
+
+    private var domains: DataDomains { DataDomains(rawValue: domainsRaw).union(.required) }
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -29,6 +34,11 @@ struct LoopbackApp: App {
     private let healthMetricsSyncer: HealthMetricsSyncer
 
     init() {
+        // Establish data-sharing intent before anything can read it: on an
+        // upgrade this carries the old single sync switch across, and on a
+        // fresh install it sets the floor for onboarding to build on.
+        DataConsent.migrateIfNeeded()
+
         // Resolve the current credentials (migrating any legacy API key into the
         // Keychain) so the live clients are configured synchronously at launch.
         let creds = SessionStore.resolveCredentials()
@@ -145,26 +155,43 @@ struct LoopbackApp: App {
                         await scheduleManager.checkForFinishablePlan()
                         await detectAndNotify()
 
-                        // Sync health metrics on foreground
-                        if healthMetricsSyncEnabled {
-                            try? await healthMetricsSyncer.syncMetrics()
-                        }
+                        // Sync health metrics on foreground. No consent check
+                        // here — `syncMetrics` reads the athlete's domains and
+                        // returns early when there's nothing shared.
+                        try? await healthMetricsSyncer.syncMetrics()
                     }
                 }
+            }
+            // Consent changed in Settings: ask for any newly shared domains,
+            // rebuild the observer set, and tell the server — which is what
+            // narrows the coach's tools.
+            .onChange(of: domainsRaw) { _, _ in
+                Task { await startHealthPipeline() }
             }
         }
     }
 
     /// HealthKit authorization + first metrics sync + background-observer
-    /// registration. Called from the post-login `.task` for onboarded users,
-    /// and from `OnboardingView` on completion (the `.task` HK block is gated
-    /// off during onboarding). Idempotent — the system auth sheet shows once.
+    /// registration, all scoped to the domains the athlete shares. Called from
+    /// the post-login `.task` for onboarded users, from `OnboardingView` on
+    /// completion (the `.task` HK block is gated off during onboarding), and
+    /// again whenever consent changes.
+    ///
+    /// Idempotent: HealthKit only sheets for types it hasn't asked about, and
+    /// `setUp(domains:)` no-ops when the domain set is unchanged.
     private func startHealthPipeline() async {
-        if healthMetricsSyncEnabled {
-            _ = await healthMetricsSyncer.requestAuthorization()
-            try? await healthMetricsSyncer.syncMetrics()
+        let domains = self.domains
+        await healthMetricsSyncer.requestAuthorization(for: domains)
+        try? await healthMetricsSyncer.syncMetrics()
+        await backgroundSyncManager.setUp(domains: domains)
+
+        // Best-effort: a server that predates the endpoint 404s, and the app
+        // stays fully usable — the coach just sees the tools it saw before.
+        do {
+            try await apiClient.sendDataConsent(DataConsentPayload(domains))
+        } catch {
+            AppLog.health.error("Data-consent push failed: \(String(describing: error), privacy: .public)")
         }
-        await backgroundSyncManager.setUp()
     }
 
     /// Refreshes everything after a credential change so it takes effect
@@ -173,9 +200,7 @@ struct LoopbackApp: App {
         await scheduleManager.loadScheduledWorkouts()
         await scheduleManager.autoSync()
         await scheduleManager.loadActivePlan()
-        if healthMetricsSyncEnabled {
-            try? await healthMetricsSyncer.syncMetrics()
-        }
+        try? await healthMetricsSyncer.syncMetrics()
     }
 
     private func detectAndNotify() async {

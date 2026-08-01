@@ -27,6 +27,15 @@ struct TrendsView: View {
     @State private var loadState: LoadState = .loading
     @State private var segment: Segment = .mileage
 
+    @AppStorage(DataConsent.appStorageKey) private var domainsRaw: Int = DataDomains.required.rawValue
+
+    /// Intent gates the surface. An athlete who doesn't share nutrition has no
+    /// Fuel tab at all — rather than one that's permanently empty and keeps
+    /// asking them to turn something on.
+    private var showsFuel: Bool {
+        DataDomains(rawValue: domainsRaw).contains(.nutrition)
+    }
+
     var body: some View {
         Group {
             switch segment {
@@ -47,14 +56,21 @@ struct TrendsView: View {
             ToolbarItem(placement: .principal) {
                 Picker("Section", selection: $segment) {
                     Text("Mileage").tag(Segment.mileage)
-                    Text("Fuel").tag(Segment.nutrition)
+                    if showsFuel {
+                        Text("Fuel").tag(Segment.nutrition)
+                    }
                     Text("Missed").tag(Segment.missed)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 260)
+                .frame(width: showsFuel ? 260 : 180)
             }
         }
         .task { await load() }
+        // Nutrition turned off while Fuel was open: fall back rather than
+        // leaving a selection the picker no longer offers.
+        .onChange(of: showsFuel) { _, shows in
+            if !shows, segment == .nutrition { segment = .mileage }
+        }
     }
 
     private var mileageContent: some View {

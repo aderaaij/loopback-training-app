@@ -438,6 +438,23 @@ actor WorkoutAPIClient {
         try await perform("POST", "api/workouts/feedback", body: Self.encoder.encode(payload), accepting: [409])
     }
 
+    // MARK: - Data Consent
+
+    /// Tells the server which health domains the athlete shares, so the MCP
+    /// layer can filter the tool list it advertises to the coach.
+    ///
+    /// Filtering the list matters more than refusing the calls. A tool that is
+    /// advertised and then errors produces a coach that retries, apologises,
+    /// and tells the athlete to go enable sleep tracking — reintroducing, in
+    /// conversation, exactly the nagging the app's own surfaces were designed
+    /// to avoid. An unadvertised tool simply isn't reasoned about.
+    ///
+    /// Older servers 404 here; the caller treats that as non-fatal, the same
+    /// way nutrition tolerated a server that predated its endpoint.
+    func sendDataConsent(_ payload: DataConsentPayload) async throws {
+        try await perform("PUT", "api/me/data-consent", body: Self.encoder.encode(payload))
+    }
+
     // MARK: - Health Metrics
 
     func sendHealthMetrics(_ payload: HealthMetricsBulkPayload) async throws {

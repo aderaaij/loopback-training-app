@@ -3,10 +3,14 @@
 //  OpenHealthSync
 //
 //  First-run onboarding: a skippable flow that seeds the coach LLM's memory.
-//  After login a new athlete answers goal / 30-min check / injuries /
-//  availability, preceded by the HealthKit permission ask. Each answer becomes
-//  a plan note (conversationId "ios-onboarding") via the training API.
-//  Skipping everything leaves the app fully functional and writes nothing.
+//  After login a new athlete answers goal / what to share / 30-min check /
+//  injuries / availability. Each answer becomes a plan note (conversationId
+//  "ios-onboarding") via the training API. Skipping everything leaves the app
+//  fully functional and writes nothing.
+//
+//  The data-sharing step owns the HealthKit prompt, and sits after the goal so
+//  the athlete knows what they're being asked for before the system sheet
+//  appears — and so we only ask for the domains they actually chose.
 //
 
 import SwiftUI
@@ -44,6 +48,7 @@ struct OnboardingView: View {
                 switch model.currentStep {
                 case .welcome:      welcomeStep
                 case .goal:         goalStep
+                case .dataSharing:  dataSharingStep
                 case .thirtyMin:    thirtyMinStep
                 case .injuries:     injuriesStep
                 case .availability: availabilityStep

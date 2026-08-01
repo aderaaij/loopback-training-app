@@ -113,7 +113,7 @@ enum TrainTime: String, CaseIterable, Identifiable {
 // MARK: - Steps
 
 enum OnboardingStep: Hashable {
-    case welcome, goal, thirtyMin, injuries, availability, finishing
+    case welcome, goal, dataSharing, thirtyMin, injuries, availability, finishing
 }
 
 // MARK: - Model
@@ -138,6 +138,11 @@ final class OnboardingModel {
     var selectedDays: Set<Int> = []   // 1=Mon … 7=Sun
     var trainTime: TrainTime?
 
+    /// What the athlete is willing to share. Preselected generously — the coach
+    /// is materially better with recovery and fuelling context — but nothing is
+    /// persisted until they act on the data-sharing step.
+    var sharedDomains: DataDomains = .all
+
     // Silent DOB capture
     private var birthYear: Int?
 
@@ -153,7 +158,10 @@ final class OnboardingModel {
     // MARK: Step sequence (derived — 30-min check is dropped for first_5k)
 
     var steps: [OnboardingStep] {
-        var s: [OnboardingStep] = [.welcome, .goal]
+        // Data sharing follows the goal on purpose: "what should your coach be
+        // able to see?" is a question an athlete can only answer once they've
+        // said what they want a coach for.
+        var s: [OnboardingStep] = [.welcome, .goal, .dataSharing]
         if goal != .first5k { s.append(.thirtyMin) }
         s.append(contentsOf: [.injuries, .availability, .finishing])
         return s
@@ -186,17 +194,41 @@ final class OnboardingModel {
         if stepIndex > 0 { stepIndex -= 1 }
     }
 
-    // MARK: HealthKit (welcome step)
+    // MARK: HealthKit (data-sharing step)
 
-    /// Requests HealthKit access, captures DOB, and kicks off a background
-    /// sync while the athlete keeps answering. Non-blocking beyond the auth
-    /// sheet itself.
+    /// Records the athlete's choice, then asks HealthKit for exactly those
+    /// domains, captures DOB, and kicks off a background sync while they keep
+    /// answering. Non-blocking beyond the auth sheet itself.
+    ///
+    /// Intent is stored *before* the sheet on purpose: it's our own state, and
+    /// it stands whatever the athlete does in the system prompt. iOS never
+    /// reports what they chose there — see `DataDomains`.
     func connectHealthKit() async {
-        _ = await healthMetricsSyncer.requestAuthorization()
+        DataConsent.set(sharedDomains)
+        await healthMetricsSyncer.requestAuthorization(for: sharedDomains)
         // Characteristic perms can't be queried — just attempt the read.
         birthYear = await healthMetricsSyncer.dateOfBirthComponents()?.year
         Task.detached { [healthMetricsSyncer] in
             try? await healthMetricsSyncer.syncMetrics()
+        }
+    }
+
+    /// "Not now": training only, which is still a full running coach — plans,
+    /// scheduling, completed runs, feedback. Settings can widen it later, and
+    /// the history backfill there fills in whatever a domain missed.
+    func declineHealthSharing() async {
+        sharedDomains = .required
+        DataConsent.set(.required)
+        await healthMetricsSyncer.requestAuthorization(for: .required)
+        birthYear = await healthMetricsSyncer.dateOfBirthComponents()?.year
+    }
+
+    func toggleDomain(_ domain: DataDomains) {
+        guard !domain.isRequired else { return }
+        if sharedDomains.contains(domain) {
+            sharedDomains.remove(domain)
+        } else {
+            sharedDomains.insert(domain)
         }
     }
 

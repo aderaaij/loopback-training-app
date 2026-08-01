@@ -49,78 +49,83 @@ actor HealthMetricsSyncer {
     /// times — and a nutrition pass is seventeen HealthKit queries.
     private var nutritionSyncInFlight = false
 
-    // MARK: - HealthKit Types
-
-    static let readTypes: Set<HKObjectType> = Set<HKObjectType>([
-        HKCategoryType(.sleepAnalysis),
-        HKQuantityType(.restingHeartRate),
-        HKQuantityType(.heartRateVariabilitySDNN),
-        HKQuantityType(.bodyMass),
-        HKQuantityType(.vo2Max),
-        HKQuantityType(.stepCount),
-        HKQuantityType(.activeEnergyBurned),
-        HKQuantityType(.basalEnergyBurned),
-        HKQuantityType(.bodyFatPercentage),
-        HKQuantityType(.leanBodyMass),
-        HKQuantityType(.respiratoryRate),
-        HKQuantityType(.oxygenSaturation),
-        // Workout effort (RPE 1–10) — read here so authorization is granted
-        // alongside other metrics; consumed by WorkoutExtractor, not this syncer.
-        HKQuantityType(.workoutEffortScore),
-        HKQuantityType(.estimatedWorkoutEffortScore),
-        // Workout detail — needed by WorkoutExtractor for the rich detail view
-        // (GPS route + per-km splits) and in-workout heart rate. Requested here
-        // so route access is granted via the app's primary auth path, not only
-        // through the optional Open Wearables tiers.
-        HKObjectType.workoutType(),
-        HKSeriesType.workoutRoute(),
-        HKQuantityType(.heartRate),
-        // Date of birth — read during onboarding to seed one age observation
-        // note for the coach. Characteristic; no share access needed.
-        HKCharacteristicType(.dateOfBirth),
-    ]).union(dietaryReadTypes)
-
-    /// Dietary types backing nutrition sync. Split out from `readTypes` only
-    /// for readability — they're requested in the same single authorization
-    /// call, which existing users see again on upgrade (the sheet lists just
-    /// these new types). `requestAuthorization` runs on every launch for that
-    /// reason; without it the new types stay unauthorized and every dietary
-    /// query silently returns nothing.
-    static let dietaryReadTypes: Set<HKObjectType> = [
-        HKQuantityType(.dietaryEnergyConsumed),
-        HKQuantityType(.dietaryCarbohydrates),
-        HKQuantityType(.dietaryProtein),
-        HKQuantityType(.dietaryFatTotal),
-        HKQuantityType(.dietaryFatSaturated),
-        HKQuantityType(.dietaryFiber),
-        HKQuantityType(.dietarySugar),
-        HKQuantityType(.dietarySodium),
-        HKQuantityType(.dietaryPotassium),
-        HKQuantityType(.dietaryCholesterol),
-        HKQuantityType(.dietaryWater),
-        HKQuantityType(.dietaryCaffeine),
-        // Micros. Cheap to read and free to store (they ride in the payload's
-        // open `micros` dictionary), but the key set must stay stable.
-        HKQuantityType(.dietaryIron),
-        HKQuantityType(.dietaryCalcium),
-        HKQuantityType(.dietaryMagnesium),
-        HKQuantityType(.dietaryVitaminC),
-    ]
+    /// And for the one-shot history pass, which now runs from `syncMetrics`
+    /// rather than under the sleep guard: overlapping observer bursts would
+    /// otherwise each start their own twelve-month upload.
+    private var historyBackfillInFlight = false
 
     init(apiClient: WorkoutAPIClient) {
         self.apiClient = apiClient
     }
 
     // MARK: - Authorization
+    //
+    // Read types are grouped by domain in `DataDomains`, and we ask only for
+    // the domains the athlete consented to — a shorter sheet at onboarding, and
+    // no authorization held for data we've no intention of reading.
 
-    func requestAuthorization() async -> Bool {
+    /// Requests read access for the consented domains.
+    ///
+    /// Runs on every launch, not only the first: HealthKit shows its sheet only
+    /// for types it hasn't already asked about, so a repeat call is free, and
+    /// it's what picks up domains enabled later in Settings and types added by
+    /// a new build. Without it those types stay unauthorized and every query
+    /// against them silently returns nothing.
+    ///
+    /// The return value means "the sheet was presented without error", nothing
+    /// more — iOS will not report what the athlete chose for read access. See
+    /// `DataDomains` for why, and `lastSampleDates(for:)` for what we use in
+    /// its place.
+    @discardableResult
+    func requestAuthorization(for domains: DataDomains) async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
+        let types = domains.healthKitReadTypes
+        guard !types.isEmpty else { return true }
         do {
-            try await healthStore.requestAuthorization(toShare: [], read: Self.readTypes)
+            try await healthStore.requestAuthorization(toShare: [], read: types)
             return true
         } catch {
             AppLog.health.error("HealthKit authorization failed: \(String(describing: error), privacy: .public)")
             return false
+        }
+    }
+
+    // MARK: - Evidence
+
+    /// When each domain last produced a sample, or nil if it never has within
+    /// the search window.
+    ///
+    /// This is the closest thing to a read-permission check that HealthKit
+    /// allows. It cannot separate "denied" from "nothing recorded" — an athlete
+    /// who withheld sleep and one who doesn't wear a watch overnight look
+    /// identical here — so it drives suggestions ("we're not seeing this"),
+    /// never assertions about what the athlete did or granted.
+    func lastSampleDates(for domains: DataDomains) async -> [DataDomains: Date] {
+        var result: [DataDomains: Date] = [:]
+        for domain in domains.elements {
+            guard let type = domain.sentinelType else { continue }
+            if let date = await mostRecentSampleDate(of: type) {
+                result[domain] = date
+            }
+        }
+        return result
+    }
+
+    private func mostRecentSampleDate(of type: HKSampleType) async -> Date? {
+        await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: nil,
+                limit: 1,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)]
+            ) { _, samples, _ in
+                // An error and an empty result mean the same thing to the
+                // caller: no evidence. Denied read access surfaces as one or
+                // the other depending on the type, and neither is reportable
+                // as denial.
+                continuation.resume(returning: samples?.first?.startDate)
+            }
+            healthStore.execute(query)
         }
     }
 
@@ -136,13 +141,35 @@ actor HealthMetricsSyncer {
     // MARK: - Sync
 
     func syncMetrics() async throws {
+        let domains = DataConsent.current
+
+        // Training-only athletes never reach HealthKit here: their workouts
+        // arrive through WorkoutManager's own path, and every leg below reads
+        // data they've declined to share.
+        guard !domains.intersection([.recovery, .body, .activity, .nutrition]).isEmpty else { return }
+
+        // One-shot history push, retried on every sync trigger until it lands,
+        // and idempotent server-side so a half-finished attempt costs nothing.
+        // It sits here rather than on the sleep path because it covers every
+        // domain — an athlete sharing nutrition but not recovery still needs
+        // their history uploaded.
+        if !UserDefaults.standard.bool(forKey: backfillDoneKey), !historyBackfillInFlight {
+            do {
+                try await backfillHealthHistory(domains: domains)
+            } catch {
+                AppLog.health.error("History backfill failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+
         // Sleep ships as raw samples on its own anchored path; its errors are
         // logged rather than thrown so a sleep hiccup can't starve the
         // quantity metrics below, and vice versa.
-        do {
-            try await syncSleepSamples()
-        } catch {
-            AppLog.health.error("Sleep sample sync failed: \(String(describing: error), privacy: .public)")
+        if domains.contains(.recovery) {
+            do {
+                try await syncSleepSamples()
+            } catch {
+                AppLog.health.error("Sleep sample sync failed: \(String(describing: error), privacy: .public)")
+            }
         }
 
         let now = Date()
@@ -155,25 +182,29 @@ actor HealthMetricsSyncer {
         // ships on its own endpoint and must still run, exactly as sleep does
         // above. It's rethrown at the end so callers keep the old contract.
         var quantityError: Error?
-        do {
-            try await syncQuantityMetrics(now: now)
-        } catch {
-            quantityError = error
+        if !domains.intersection([.recovery, .body, .activity]).isEmpty {
+            do {
+                try await syncQuantityMetrics(now: now, domains: domains)
+            } catch {
+                quantityError = error
+            }
         }
 
         // Nutrition ships on its own endpoint; its errors are logged rather
         // than thrown so a food-logging hiccup can't starve the quantity
         // metrics.
-        do {
-            try await syncNutrition(from: nutritionStart, to: now)
-        } catch {
-            AppLog.health.error("Nutrition sync failed: \(String(describing: error), privacy: .public)")
+        if domains.contains(.nutrition) {
+            do {
+                try await syncNutrition(from: nutritionStart, to: now)
+            } catch {
+                AppLog.health.error("Nutrition sync failed: \(String(describing: error), privacy: .public)")
+            }
         }
 
         if let quantityError { throw quantityError }
     }
 
-    private func syncQuantityMetrics(now: Date) async throws {
+    private func syncQuantityMetrics(now: Date, domains: DataDomains) async throws {
         let startDate: Date
 
         // One-shot deep pass the first time a build with basal energy syncs.
@@ -182,7 +213,11 @@ actor HealthMetricsSyncer {
         // widening the window once fills them in. Safe against the existing
         // rows — the server upserts field-by-field, and every other metric in
         // the window recomputes to the same whole-day value it already holds.
-        let isBasalBackfill = !UserDefaults.standard.bool(forKey: basalBackfillKey)
+        // Only meaningful when daily activity is shared — basal energy lives in
+        // that domain, so an athlete who hasn't shared it has nothing to fill
+        // in and mustn't pay for a twelve-month pass.
+        let isBasalBackfill = domains.contains(.activity)
+            && !UserDefaults.standard.bool(forKey: basalBackfillKey)
 
         if isBasalBackfill {
             startDate = calendar.startOfDay(
@@ -201,7 +236,7 @@ actor HealthMetricsSyncer {
             startDate = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -7, to: now) ?? now)
         }
 
-        let metrics = try await fetchMetrics(from: startDate, to: now)
+        let metrics = try await fetchMetrics(from: startDate, to: now, domains: domains)
         guard !metrics.isEmpty else { return }
 
         let payload = HealthMetricsBulkPayload(metrics: metrics)
@@ -218,27 +253,37 @@ actor HealthMetricsSyncer {
 
     // MARK: - Fetch All Metrics
 
-    private func fetchMetrics(from startDate: Date, to endDate: Date) async throws -> [DailyHealthMetrics] {
+    private func fetchMetrics(
+        from startDate: Date,
+        to endDate: Date,
+        domains: DataDomains
+    ) async throws -> [DailyHealthMetrics] {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         dateFormatter.timeZone = calendar.timeZone
 
-        // Fetch all metric types concurrently. Sleep is absent by design:
-        // it goes to the server as raw samples (see syncSleepSamples), never
-        // as an app-computed daily total.
-        async let restingHRData = fetchAverageByDay(.restingHeartRate, unit: .beatsPerMinute(), from: startDate, to: endDate)
-        async let hrvData = fetchAverageByDay(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: startDate, to: endDate)
-        async let weightData = fetchLatestByDay(.bodyMass, unit: .gramUnit(with: .kilo), from: startDate, to: endDate)
-        async let vo2Data = fetchAverageByDay(.vo2Max, unit: HKUnit(from: "ml/kg*min"), from: startDate, to: endDate)
-        async let stepsData = fetchSumByDay(.stepCount, unit: .count(), from: startDate, to: endDate)
-        async let energyData = fetchSumByDay(.activeEnergyBurned, unit: .kilocalorie(), from: startDate, to: endDate)
+        let recovery = domains.contains(.recovery)
+        let body = domains.contains(.body)
+        let activity = domains.contains(.activity)
+
+        // Fetch all consented metric types concurrently; an unconsented one
+        // resolves to an empty dictionary without touching HealthKit, so the
+        // day rows below simply carry nil for it and the server reads that as
+        // "not tracked". Sleep is absent by design: it goes to the server as
+        // raw samples (see syncSleepSamples), never as an app-computed total.
+        async let restingHRData = fetchAverageByDay(.restingHeartRate, unit: .beatsPerMinute(), from: startDate, to: endDate, enabled: recovery)
+        async let hrvData = fetchAverageByDay(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: startDate, to: endDate, enabled: recovery)
+        async let weightData = fetchLatestByDay(.bodyMass, unit: .gramUnit(with: .kilo), from: startDate, to: endDate, enabled: body)
+        async let vo2Data = fetchAverageByDay(.vo2Max, unit: HKUnit(from: "ml/kg*min"), from: startDate, to: endDate, enabled: body)
+        async let stepsData = fetchSumByDay(.stepCount, unit: .count(), from: startDate, to: endDate, enabled: activity)
+        async let energyData = fetchSumByDay(.activeEnergyBurned, unit: .kilocalorie(), from: startDate, to: endDate, enabled: activity)
         // Cumulative like active energy, so the same whole-day sum applies —
         // and the same midnight-snapped window is what keeps it whole.
-        async let basalData = fetchSumByDay(.basalEnergyBurned, unit: .kilocalorie(), from: startDate, to: endDate)
-        async let bodyFatData = fetchLatestByDay(.bodyFatPercentage, unit: .percent(), from: startDate, to: endDate)
-        async let leanMassData = fetchLatestByDay(.leanBodyMass, unit: .gramUnit(with: .kilo), from: startDate, to: endDate)
-        async let respRateData = fetchAverageByDay(.respiratoryRate, unit: .beatsPerMinute(), from: startDate, to: endDate)
-        async let spo2Data = fetchAverageByDay(.oxygenSaturation, unit: .percent(), from: startDate, to: endDate)
+        async let basalData = fetchSumByDay(.basalEnergyBurned, unit: .kilocalorie(), from: startDate, to: endDate, enabled: activity)
+        async let bodyFatData = fetchLatestByDay(.bodyFatPercentage, unit: .percent(), from: startDate, to: endDate, enabled: body)
+        async let leanMassData = fetchLatestByDay(.leanBodyMass, unit: .gramUnit(with: .kilo), from: startDate, to: endDate, enabled: body)
+        async let respRateData = fetchAverageByDay(.respiratoryRate, unit: .beatsPerMinute(), from: startDate, to: endDate, enabled: recovery)
+        async let spo2Data = fetchAverageByDay(.oxygenSaturation, unit: .percent(), from: startDate, to: endDate, enabled: recovery)
 
         let restingHR = (try? await restingHRData) ?? [:]
         let hrv = (try? await hrvData) ?? [:]
@@ -546,9 +591,12 @@ actor HealthMetricsSyncer {
     }
 
     /// Most recent body-mass reading within the last 90 days. Read locally for
-    /// the Trends screen's protein-per-kg figure — the app already holds
-    /// body-mass authorization, so one number doesn't need a server round-trip.
+    /// the Trends screen's protein-per-kg figure — when the body domain is
+    /// shared the app already holds that authorization, so one number doesn't
+    /// need a server round-trip. Returns nil when it isn't, and the caller
+    /// drops the per-kg figure rather than guessing a weight.
     func latestBodyMassKg() async -> Double? {
+        guard DataConsent.current.contains(.body) else { return nil }
         let end = Date()
         guard let start = calendar.date(byAdding: .day, value: -90, to: end) else { return nil }
         let byDay = (try? await fetchLatestByDay(
@@ -559,12 +607,17 @@ actor HealthMetricsSyncer {
 
     // MARK: - Sum by Day (steps, active energy)
 
+    /// `enabled: false` returns an empty result without running a query. That's
+    /// the domain gate: an unconsented type is never read, rather than read and
+    /// then discarded.
     private func fetchSumByDay(
         _ identifier: HKQuantityTypeIdentifier,
         unit: HKUnit,
         from startDate: Date,
-        to endDate: Date
+        to endDate: Date,
+        enabled: Bool = true
     ) async throws -> [Date: Double] {
+        guard enabled else { return [:] }
         let quantityType = HKQuantityType(identifier)
         let interval = DateComponents(day: 1)
         let anchorDate = calendar.startOfDay(for: startDate)
@@ -606,8 +659,10 @@ actor HealthMetricsSyncer {
         _ identifier: HKQuantityTypeIdentifier,
         unit: HKUnit,
         from startDate: Date,
-        to endDate: Date
+        to endDate: Date,
+        enabled: Bool = true
     ) async throws -> [Date: Double] {
+        guard enabled else { return [:] }
         let quantityType = HKQuantityType(identifier)
         let interval = DateComponents(day: 1)
         let anchorDate = calendar.startOfDay(for: startDate)
@@ -649,8 +704,10 @@ actor HealthMetricsSyncer {
         _ identifier: HKQuantityTypeIdentifier,
         unit: HKUnit,
         from startDate: Date,
-        to endDate: Date
+        to endDate: Date,
+        enabled: Bool = true
     ) async throws -> [Date: Double] {
+        guard enabled else { return [:] }
         let quantityType = HKQuantityType(identifier)
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
@@ -693,12 +750,6 @@ actor HealthMetricsSyncer {
         sleepSyncInFlight = true
         defer { sleepSyncInFlight = false }
 
-        // One-shot history push, retried on every sync trigger until it lands.
-        // Idempotent server-side, so a half-finished attempt costs nothing.
-        if !UserDefaults.standard.bool(forKey: backfillDoneKey) {
-            try await backfillHealthHistory()
-        }
-
         // The anchored query resumes from HealthKit's change log, so samples
         // a watch delivers hours late still reach the server no matter which
         // night they belong to. First run bounds the dump to recent nights;
@@ -735,18 +786,27 @@ actor HealthMetricsSyncer {
     /// clears any day left stuck at `partial: true` by a sync gap wider than
     /// the rolling window.
     ///
-    /// Settings exposes a manual trigger for re-runs.
+    /// Settings exposes a manual trigger for re-runs, which passes the athlete's
+    /// current domains — so a repair covers exactly what they share today, and
+    /// re-running after enabling a domain is how its history gets uploaded.
     @discardableResult
-    func backfillHealthHistory() async throws -> HealthHistoryBackfillResult {
+    func backfillHealthHistory(domains: DataDomains = DataConsent.current) async throws -> HealthHistoryBackfillResult {
+        historyBackfillInFlight = true
+        defer { historyBackfillInFlight = false }
+
         let end = Date()
         let start = calendar.startOfDay(
             for: calendar.date(byAdding: .month, value: -backfillMonths, to: end) ?? end
         )
 
-        let samples = try await fetchSleepSampleHistory(from: start, to: end)
-        let result = try await uploadSleepSamples(samples)
+        var samples: [SleepSamplePayload] = []
+        var result: (stored: Int, daysUpdated: Int) = (0, 0)
+        if domains.contains(.recovery) {
+            samples = try await fetchSleepSampleHistory(from: start, to: end)
+            result = try await uploadSleepSamples(samples)
+        }
 
-        let metrics = try await fetchMetrics(from: start, to: end)
+        let metrics = try await fetchMetrics(from: start, to: end, domains: domains)
         if !metrics.isEmpty {
             try await apiClient.sendHealthMetrics(HealthMetricsBulkPayload(metrics: metrics))
         }
@@ -756,20 +816,26 @@ actor HealthMetricsSyncer {
         // failure throw would report the whole repair as failed. A server
         // without the endpoint yet is exactly that case.
         var nutritionDays: Int?
-        do {
-            let days = try await fetchNutritionDays(from: start, to: end)
-            if !days.isEmpty {
-                try await uploadNutrition(days)
+        if domains.contains(.nutrition) {
+            do {
+                let days = try await fetchNutritionDays(from: start, to: end)
+                if !days.isEmpty {
+                    try await uploadNutrition(days)
+                }
+                nutritionDays = days.count
+            } catch {
+                AppLog.health.error("History backfill: nutrition failed: \(String(describing: error), privacy: .public)")
             }
-            nutritionDays = days.count
-        } catch {
-            AppLog.health.error("History backfill: nutrition failed: \(String(describing: error), privacy: .public)")
         }
 
         UserDefaults.standard.set(true, forKey: backfillDoneKey)
         // This pass already covered the same window with basal included, so a
         // fresh install needn't turn round and repeat it in syncQuantityMetrics.
-        UserDefaults.standard.set(true, forKey: basalBackfillKey)
+        // Only true if activity was actually in scope — otherwise the deep pass
+        // still owes us those columns if the athlete enables it later.
+        if domains.contains(.activity) {
+            UserDefaults.standard.set(true, forKey: basalBackfillKey)
+        }
         AppLog.health.info("History backfill: sent \(samples.count) sleep samples (server stored \(result.stored) across \(result.daysUpdated) day(s)), \(metrics.count) days of metrics, and \(nutritionDays.map(String.init) ?? "no") days of nutrition")
         return HealthHistoryBackfillResult(
             sleepSamplesStored: result.stored,
