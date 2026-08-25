@@ -136,4 +136,8 @@ Build and run on a physical device. On first launch, sign in with your server UR
 
 ## License
 
-TBD
+[MIT](LICENSE) — same as the [Loopback Server](https://github.com/aderaaij/loopback-training-server).
+
+The name **Loopback** and the app icon are not covered by that licence. Fork
+and build freely, but ship your fork under its own name and icon so nobody
+mistakes it for the App Store build.

@@ -85,13 +85,25 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
     /// Server is ahead of what this build knows — usually the softer "update
     /// the app" note, tinted as a warning when it's a whole major ahead.
     case serverNewer(current: ServerVersion, appSupports: ServerVersion)
+    /// Wire-compatible, but behind the patch release that added endpoints this
+    /// build calls. The app works; the newer features fail quietly. Warns,
+    /// never blocks.
+    case serverMissingFeatures(current: ServerVersion, required: ServerVersion)
 
     /// Oldest server this app can talk to. 0.x rule: a minor bump (0.1 → 0.2)
     /// is a breaking wire change, so the gate compares on minor, not patch.
     static let minimumServerVersion = ServerVersion(0, 1, 0)
+    /// Oldest server that answers every endpoint this build depends on.
+    /// Compared on the **full triple**, unlike the two gates around it: the
+    /// server ships additive endpoints as patch releases (basal energy in
+    /// 0.1.10, per-domain data consent in 0.1.12), so a major.minor comparison
+    /// can't tell a server that has them from one that answers 404/405 — and a
+    /// 405 reads to the athlete as "the app is broken", not "the server is
+    /// behind". Raise this whenever the app starts calling a newer endpoint.
+    static let requiredServerVersion = ServerVersion(0, 1, 12)
     /// Newest server line this build was written against. A server minor above
     /// this only earns the soft "app is behind" note.
-    static let latestKnownServerVersion = ServerVersion(0, 1, 0)
+    static let latestKnownServerVersion = ServerVersion(0, 1, 13)
 
     static func evaluate(_ version: ServerVersion?) -> ServerCompatibility {
         guard let version else { return .unknown }
@@ -105,12 +117,18 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
         if (version.major, version.minor) > (known.major, known.minor) {
             return .serverNewer(current: version, appSupports: known)
         }
+        // Same minor line, so the wire contract holds — but the server may
+        // predate endpoints this build calls. This one comparison is on the
+        // full triple; see `requiredServerVersion`.
+        if version < requiredServerVersion {
+            return .serverMissingFeatures(current: version, required: requiredServerVersion)
+        }
         return .compatible
     }
 
     var isWarning: Bool {
         switch self {
-        case .serverTooOld, .serverNewer: return true
+        case .serverTooOld, .serverNewer, .serverMissingFeatures: return true
         case .compatible, .unknown: return false
         }
     }
@@ -125,7 +143,7 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
             return true
         case let .serverNewer(current, appSupports):
             return current.major > appSupports.major
-        case .compatible, .unknown:
+        case .serverMissingFeatures, .compatible, .unknown:
             return false
         }
     }
@@ -139,6 +157,8 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
             return "This server is running v\(current). Loopback needs v\(minimum) or newer — update the server."
         case let .serverNewer(current, appSupports):
             return "This server (v\(current)) is newer than this app understands (built for v\(appSupports)). Consider updating the app."
+        case let .serverMissingFeatures(current, required):
+            return "This server is running v\(current). Nutrition sync and data-sharing controls need v\(required) or newer — update the server, or those features will fail quietly."
         }
     }
 }
