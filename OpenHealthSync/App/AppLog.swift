@@ -14,7 +14,7 @@ import Foundation
 import os
 
 nonisolated enum AppLog {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.ardennl.OpenHealthSync"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "dev.ardenlab.loopback"
 
     /// Server sync: queue, inventory, plans, calendar, feedback.
     static let sync = Logger(subsystem: subsystem, category: "sync")

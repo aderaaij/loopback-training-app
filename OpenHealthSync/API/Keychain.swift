@@ -12,7 +12,7 @@ import Security
 
 enum Keychain {
     private static var service: String {
-        Bundle.main.bundleIdentifier ?? "com.ardennl.OpenHealthSync"
+        Bundle.main.bundleIdentifier ?? "dev.ardenlab.loopback"
     }
 
     /// Stores `value` for `key`, or deletes the entry when `value` is nil/empty.
