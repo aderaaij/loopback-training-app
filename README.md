@@ -1,4 +1,4 @@
-# Loopback – Run Coach (iOS)
+# Loopback – Running Coach (iOS)
 
 A privacy-first training companion for iOS that connects Apple Health data to AI coaching. Manages the full workout lifecycle — plan creation, Apple Watch scheduling, execution tracking, and performance analysis — all through a self-hosted backend you control: the [Loopback Server](https://github.com/aderaaij/loopback-training-server).
 
