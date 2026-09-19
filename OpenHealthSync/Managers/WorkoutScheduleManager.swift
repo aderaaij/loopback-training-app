@@ -387,6 +387,10 @@ class WorkoutScheduleManager {
                 await refreshFromServer(modelContext: modelContext)
                 await loadActivePlan()
             } else {
+                // Nothing new, but this device may still lack runs it never
+                // received (reinstall, new phone). Before the inventory, so
+                // the server hears about what was restored.
+                await restoreMissingWorkouts()
                 // Still sync inventory to report completion status
                 await syncWorkoutInventory()
                 // Keep the merged agenda fresh (strength sessions can be
@@ -417,26 +421,12 @@ class WorkoutScheduleManager {
         do {
             let queue = try await apiClient.fetchQueue()
 
-            if queue.isEmpty {
-                refreshState = .done(count: 0)
-                return
-            }
-
             var scheduled = 0
             for (index, composition) in queue.enumerated() {
                 refreshState = .scheduling(current: index + 1, total: queue.count)
 
                 do {
-                    let customWorkout = try WorkoutCompositionBuilder.buildCustomWorkout(from: composition)
-                    let plan = WorkoutPlan(.custom(customWorkout), id: composition.id)
-
-                    let dateComponents = Calendar.current.dateComponents(
-                        [.year, .month, .day, .hour, .minute],
-                        from: composition.scheduledDate
-                    )
-
-                    await WorkoutScheduler.shared.schedule(plan, at: dateComponents)
-                    scheduledDateMap[composition.id] = dateComponents
+                    try await scheduleOnWatch(composition)
                     try await apiClient.updateQueueItemStatus(id: composition.id, status: "synced")
                     scheduled += 1
                 } catch {
@@ -444,12 +434,99 @@ class WorkoutScheduleManager {
                 }
             }
 
+            // After the pending items, so a new run is never crowded out of
+            // the WorkoutKit limit by an older one being restored.
+            let restored = await restoreMissingWorkouts()
+            if restored > 0 {
+                // The inventory went up at the start of this refresh, before
+                // the restored runs existed.
+                await syncWorkoutInventory()
+            }
+
             await loadScheduledWorkouts()
-            refreshState = .done(count: scheduled)
+            refreshState = .done(count: scheduled + restored)
 
         } catch {
             refreshState = .failed(message: error.localizedDescription)
         }
+    }
+
+    /// Builds a composition's CustomWorkout and schedules it under the queue
+    /// item's id, recording the date `remove(_:at:)` will need later.
+    private func scheduleOnWatch(_ composition: QueuedWorkoutComposition) async throws {
+        let customWorkout = try WorkoutCompositionBuilder.buildCustomWorkout(from: composition)
+        let plan = WorkoutPlan(.custom(customWorkout), id: composition.id)
+
+        let dateComponents = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: composition.scheduledDate
+        )
+
+        await WorkoutScheduler.shared.schedule(plan, at: dateComponents)
+        scheduledDateMap[composition.id] = dateComponents
+    }
+
+    // MARK: - Restore Missing Workouts
+
+    /// Re-schedules delivered runs this device's watch doesn't have. The
+    /// server marks a queue item `synced` once for the whole account, so after
+    /// a reinstall or on a new phone the pending queue is empty while the plan
+    /// still has upcoming runs, and without this the watch, calendar and
+    /// "Upcoming" list stay empty. Nothing is confirmed back, since the items
+    /// are already `synced`. Returns how many runs were scheduled.
+    @discardableResult
+    func restoreMissingWorkouts() async -> Int {
+        // Without WorkoutKit authorization nothing can be scheduled, and an
+        // unreadable schedule would make every run look missing.
+        guard await WorkoutScheduler.shared.authorizationState == .authorized else { return 0 }
+
+        let expected: [QueuedWorkoutComposition]
+        do {
+            expected = try await apiClient.fetchScheduledQueue(from: Calendar.current.startOfDay(for: Date()))
+        } catch {
+            // Best-effort. A server before 0.1.14 404s here; Settings already
+            // flags it as behind, and pending-queue sync is unaffected.
+            AppLog.sync.error("Failed to fetch scheduled workouts for restore: \(String(describing: error), privacy: .public)")
+            return 0
+        }
+
+        let onDevice = await WorkoutScheduler.shared.scheduledWorkouts
+        let missing = Self.workoutsToRestore(
+            expected: expected,
+            onDevice: Set(onDevice.map(\.plan.id)),
+            // Completed workouts linger in the schedule. Counting them could
+            // leave no room at all, while an attempt past the real limit just
+            // doesn't land and is retried next sync.
+            room: WorkoutScheduler.maxAllowedScheduledWorkoutCount - onDevice.filter { !$0.complete }.count
+        )
+        guard !missing.isEmpty else { return 0 }
+
+        var restored = 0
+        for composition in missing {
+            do {
+                try await scheduleOnWatch(composition)
+                restored += 1
+            } catch {
+                AppLog.scheduling.error("Failed to restore '\(composition.displayName, privacy: .public)': \(String(describing: error), privacy: .public)")
+            }
+        }
+        AppLog.sync.info("Restored \(restored) of \(missing.count) workouts missing from this device")
+        await loadScheduledWorkouts()
+        return restored
+    }
+
+    /// The expected runs missing from the device, soonest first, capped at
+    /// the room WorkoutKit has left. When a long plan exceeds the limit the
+    /// nearest runs win, and later syncs add the rest as earlier ones finish.
+    static func workoutsToRestore(
+        expected: [QueuedWorkoutComposition],
+        onDevice: Set<UUID>,
+        room: Int
+    ) -> [QueuedWorkoutComposition] {
+        let missing = expected
+            .filter { !onDevice.contains($0.id) }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+        return Array(missing.prefix(max(room, 0)))
     }
 
     // MARK: - Remove All
@@ -480,6 +557,13 @@ class WorkoutScheduleManager {
         scheduledDateMap.removeValue(forKey: id)
         await loadScheduledWorkouts()
         return true
+    }
+
+    /// True only when WorkoutKit is readable and doesn't hold the workout.
+    /// Unauthorized, an empty read proves nothing.
+    private func isAbsentFromDevice(_ id: UUID) async -> Bool {
+        guard await WorkoutScheduler.shared.authorizationState == .authorized else { return false }
+        return !(await WorkoutScheduler.shared.scheduledWorkouts).contains { $0.plan.id == id }
     }
 
     // MARK: - Reschedule Workout (same workout, new date)
@@ -523,16 +607,7 @@ class WorkoutScheduleManager {
 
         // Schedule the updated version
         do {
-            let customWorkout = try WorkoutCompositionBuilder.buildCustomWorkout(from: composition)
-            let plan = WorkoutPlan(.custom(customWorkout), id: composition.id)
-
-            let dateComponents = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute],
-                from: composition.scheduledDate
-            )
-
-            await WorkoutScheduler.shared.schedule(plan, at: dateComponents)
-            scheduledDateMap[composition.id] = dateComponents
+            try await scheduleOnWatch(composition)
             await loadScheduledWorkouts()
             return true
         } catch {
@@ -550,7 +625,15 @@ class WorkoutScheduleManager {
             for action in actions {
                 switch action.action {
                 case "delete":
-                    let success = await removeWorkout(id: action.workoutId)
+                    var success = await removeWorkout(id: action.workoutId)
+                    // Not on this device (a fresh install that never got
+                    // it) is already what the delete asks for. Ack it, so the
+                    // server retires the item as skipped; unacked, the action
+                    // would sit forever and the restore pass would keep
+                    // putting the run back.
+                    if !success {
+                        success = await isAbsentFromDevice(action.workoutId)
+                    }
                     if success {
                         try? await apiClient.acknowledgePendingAction(id: action.id)
                     }

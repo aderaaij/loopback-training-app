@@ -96,14 +96,15 @@ nonisolated enum ServerCompatibility: Sendable, Equatable {
     /// Oldest server that answers every endpoint this build depends on.
     /// Compared on the **full triple**, unlike the two gates around it: the
     /// server ships additive endpoints as patch releases (basal energy in
-    /// 0.1.10, per-domain data consent in 0.1.12), so a major.minor comparison
-    /// can't tell a server that has them from one that answers 404/405 — and a
-    /// 405 reads to the athlete as "the app is broken", not "the server is
-    /// behind". Raise this whenever the app starts calling a newer endpoint.
-    static let requiredServerVersion = ServerVersion(0, 1, 12)
+    /// 0.1.10, per-domain data consent in 0.1.12, the watch-schedule restore
+    /// in 0.1.14), so a major.minor comparison can't tell a server that has
+    /// them from one that answers 404/405 — and a 405 reads to the athlete as
+    /// "the app is broken", not "the server is behind". Raise this whenever
+    /// the app starts calling a newer endpoint.
+    static let requiredServerVersion = ServerVersion(0, 1, 14)
     /// Newest server line this build was written against. A server minor above
     /// this only earns the soft "app is behind" note.
-    static let latestKnownServerVersion = ServerVersion(0, 1, 13)
+    static let latestKnownServerVersion = ServerVersion(0, 1, 14)
 
     static func evaluate(_ version: ServerVersion?) -> ServerCompatibility {
         guard let version else { return .unknown }

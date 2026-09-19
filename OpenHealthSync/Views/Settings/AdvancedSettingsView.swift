@@ -35,6 +35,10 @@ struct AdvancedSettingsView: View {
                     Button("Remove All", role: .destructive) {
                         Task { await onRemoveAllWorkouts() }
                     }
+                } message: {
+                    // The server's schedule is the source of truth: the next
+                    // sync restores anything still due.
+                    Text("Your plan's upcoming runs are scheduled again on the next sync. To drop runs for good, change the plan.")
                 }
             }
 

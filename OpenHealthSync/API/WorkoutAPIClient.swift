@@ -401,6 +401,18 @@ actor WorkoutAPIClient {
         try await request("GET", "api/workouts/queue")
     }
 
+    /// Delivered workouts that are still due on or after `from` (server
+    /// 0.1.14+): what the watch schedule should hold beyond the pending
+    /// queue. `synced` is per account, not per device, so this is the only
+    /// way a reinstall or a new phone gets those runs back. A server that
+    /// predates the endpoint answers 404, which throws like any other error.
+    func fetchScheduledQueue(from: Date) async throws -> [QueuedWorkoutComposition] {
+        // ISO8601DateFormatter emits UTC with a "Z"; an offset's "+" would
+        // reach the server as a space (URLComponents leaves "+" unescaped).
+        let since = ISO8601DateFormatter().string(from: from)
+        return try await request("GET", "api/workouts/queue/scheduled", query: [URLQueryItem(name: "from", value: since)])
+    }
+
     func updateQueueItemStatus(id: UUID, status: String) async throws {
         try await perform(
             "PATCH", "api/workouts/queue/\(id.uuidString)",
