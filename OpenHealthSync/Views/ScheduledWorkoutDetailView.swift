@@ -14,6 +14,10 @@ import HealthKit
 struct ScheduledWorkoutDetailView: View {
     let scheduled: ScheduledWorkoutPlan
 
+    @Environment(WorkoutScheduleManager.self) private var scheduleManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var changingPlans: MissedWorkoutInfo?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -31,12 +35,84 @@ struct ScheduledWorkoutDetailView: View {
                 @unknown default:
                     unavailableSection(text: "Workout details unavailable")
                 }
+
+                if let scheduledDate, isUpcoming {
+                    changePlansButton(scheduledDate: scheduledDate)
+                }
             }
             .padding(18)
         }
         .background(LB.bg)
         .navigationTitle(workoutName)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $changingPlans, onDismiss: leaveIfChanged) { workout in
+            MissedWorkoutFeedbackFlow(missedWorkouts: [workout])
+        }
+    }
+
+    // MARK: - Change Plans
+
+    private var scheduledDate: Date? {
+        Calendar.current.date(from: scheduled.date)
+    }
+
+    /// Not done and not past its day. A missed run is checked in from the
+    /// Training tab instead.
+    private var isUpcoming: Bool {
+        guard !scheduled.complete, let scheduledDate else { return false }
+        return scheduledDate >= Calendar.current.startOfDay(for: Date())
+    }
+
+    private func changePlansButton(scheduledDate: Date) -> some View {
+        Button {
+            changingPlans = MissedWorkoutInfo(
+                id: scheduled.plan.id,
+                displayName: workoutName,
+                scheduledDate: scheduledDate
+            )
+        } label: {
+            HStack(spacing: 13) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 18))
+                    .frame(width: 32)
+                    .foregroundStyle(LB.accent)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Change plans")
+                        .font(.lbBody(15, .semibold))
+                        .foregroundStyle(LB.textPrimary)
+                    Text("Move this run or skip it")
+                        .font(.lbBody(12))
+                        .foregroundStyle(LB.textTertiary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13))
+                    .foregroundStyle(LB.textMuted)
+            }
+            .padding(15)
+            .background(
+                RoundedRectangle(cornerRadius: LB.rInner, style: .continuous).fill(LB.optionOff)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: LB.rInner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+    }
+
+    /// This screen shows the run as it was when opened. Once it has moved or
+    /// been skipped that's stale, so head back to the refreshed schedule.
+    private func leaveIfChanged() {
+        let unchanged = scheduleManager.scheduledWorkouts.contains {
+            $0.plan.id == scheduled.plan.id && $0.date == scheduled.date
+        }
+        if !unchanged {
+            dismiss()
+        }
     }
 
     // MARK: - Header

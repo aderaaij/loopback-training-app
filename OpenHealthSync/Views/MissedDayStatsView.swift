@@ -16,11 +16,17 @@ import SwiftData
 struct MissedDayStatsView: View {
     var detector: MissedWorkoutDetector
     @Query(sort: \WorkoutFeedback.scheduledDate, order: .reverse)
-    private var feedbackEntries: [WorkoutFeedback]
+    private var allFeedback: [WorkoutFeedback]
 
     @State private var checkInWorkout: MissedWorkoutInfo?
 
     // MARK: - Derived data
+
+    /// Check-ins on runs that actually lapsed. Runs moved or skipped ahead of
+    /// time were plan changes, not missed days.
+    private var feedbackEntries: [WorkoutFeedback] {
+        allFeedback.filter { !$0.wasFiledAheadOfTime }
+    }
 
     /// Check-ins where the user actually picked a reason.
     private var checkedIn: [WorkoutFeedback] {

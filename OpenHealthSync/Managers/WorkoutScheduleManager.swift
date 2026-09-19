@@ -596,6 +596,39 @@ class WorkoutScheduleManager {
         return true
     }
 
+    // MARK: - Change Plans Ahead of Time
+
+    /// Skips a run that isn't due yet. The server hears first: the restore
+    /// pass re-adds any due run the server still expects, so removing it from
+    /// the watch before the skip lands would only bring it back. Throws when
+    /// the server can't be told, and then nothing has changed.
+    func skipUpcomingWorkout(_ feedback: WorkoutFeedbackPayload) async throws {
+        try await apiClient.submitFeedback(feedback)
+        if !(await removeWorkout(id: feedback.workoutId)) {
+            AppLog.scheduling.warning("Skipped workout \(feedback.workoutId, privacy: .public) on the server but couldn't remove it from the watch")
+        }
+    }
+
+    /// Moves a run that isn't due yet, telling the server first so a failure
+    /// leaves the run where it was on both sides. Throws when the server can't
+    /// be told. If the watch then can't re-date it, the server already has the
+    /// new day.
+    func moveUpcomingWorkout(_ feedback: WorkoutFeedbackPayload, to newDate: Date) async throws {
+        try await apiClient.submitFeedback(feedback)
+        if !(await rescheduleWorkout(id: feedback.workoutId, to: newDate)) {
+            AppLog.scheduling.warning("Moved workout \(feedback.workoutId, privacy: .public) on the server but couldn't re-date it on the watch")
+        }
+    }
+
+    /// The coach reads the device inventory, and the plan card counts the
+    /// plan's runs, so both should reflect a change right away. Run once after
+    /// a whole change (a move plus the skips it made room with), so two
+    /// inventory uploads can't race each other.
+    func refreshAfterPlanChange() async {
+        await syncWorkoutInventory()
+        await loadActivePlan()
+    }
+
     // MARK: - Edit Workout (remove + re-schedule)
 
     func editWorkout(id: UUID, composition: QueuedWorkoutComposition) async -> Bool {

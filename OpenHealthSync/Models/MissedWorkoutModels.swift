@@ -100,11 +100,53 @@ final class WorkoutFeedback {
     }
 }
 
+extension WorkoutFeedback {
+    /// Whether this check-in settles the run scheduled on `date`. A move
+    /// re-dates the run, so its check-in only covers the day it left: a moved
+    /// run that's missed on its new day needs a check-in of its own.
+    func covers(workoutId: UUID, scheduledOn date: Date) -> Bool {
+        self.workoutId == workoutId && Calendar.current.isDate(scheduledDate, inSameDayAs: date)
+    }
+
+    /// Filed on or before the run's own day: a change of plans rather than a
+    /// miss, since a missed run can only be checked in from the next day on.
+    var wasFiledAheadOfTime: Bool {
+        let calendar = Calendar.current
+        guard let acknowledgedAt,
+              let dayAfter = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: scheduledDate))
+        else { return false }
+        return acknowledgedAt < dayAfter
+    }
+
+    var payload: WorkoutFeedbackPayload {
+        WorkoutFeedbackPayload(
+            id: id,
+            workoutId: workoutId,
+            workoutName: workoutName,
+            scheduledDate: scheduledDate,
+            detectedAt: detectedAt,
+            acknowledgedAt: acknowledgedAt,
+            reason: reason.rawValue,
+            reasonNote: reasonNote,
+            action: action.rawValue,
+            newDate: newDate,
+            dismissed: dismissed
+        )
+    }
+}
+
 // MARK: - Lightweight Info for Detection
 
-/// Non-persisted struct used by the detector to surface missed workouts to the UI.
+/// Non-persisted struct used by the detector to surface missed workouts to the
+/// UI. Also carries a run that isn't due yet into the same sheet, when the
+/// athlete moves or skips it ahead of time.
 struct MissedWorkoutInfo: Identifiable {
     let id: UUID          // the workout plan ID
     let displayName: String
     let scheduledDate: Date
+
+    /// Due today or later: a change of plans rather than a check-in on a miss.
+    var isUpcoming: Bool {
+        scheduledDate >= Calendar.current.startOfDay(for: Date())
+    }
 }

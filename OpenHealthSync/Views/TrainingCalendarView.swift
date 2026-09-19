@@ -233,10 +233,19 @@ private struct DayDetailSection: View {
         return scheduledDate < startOfToday
     }
 
-    private func existingFeedback(for workoutId: UUID) -> WorkoutFeedback? {
+    private func existingFeedback(for plan: ScheduledWorkoutPlan) -> WorkoutFeedback? {
         let descriptor = FetchDescriptor<WorkoutFeedback>()
-        guard let allFeedback = try? modelContext.fetch(descriptor) else { return nil }
-        return allFeedback.first { $0.workoutId == workoutId && !$0.dismissed }
+        guard let allFeedback = try? modelContext.fetch(descriptor),
+              let scheduledDate = Calendar.current.date(from: plan.date) else { return nil }
+        return allFeedback.first { $0.covers(workoutId: plan.plan.id, scheduledOn: scheduledDate) && !$0.dismissed }
+    }
+
+    private func info(for plan: ScheduledWorkoutPlan) -> MissedWorkoutInfo {
+        MissedWorkoutInfo(
+            id: plan.plan.id,
+            displayName: workoutDisplayName(for: plan),
+            scheduledDate: Calendar.current.date(from: plan.date) ?? Date()
+        )
     }
 
     /// Find the HealthKit strength workout that completed a scheduled
@@ -267,7 +276,7 @@ private struct DayDetailSection: View {
         switch item {
         case .scheduledPlan(let plan):
             if isPastDue(plan) {
-                if let feedback = existingFeedback(for: plan.plan.id) {
+                if let feedback = existingFeedback(for: plan) {
                     // Already checked in — show reason and action
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -288,11 +297,7 @@ private struct DayDetailSection: View {
                     .innerCardStyle(tint: .orange)
                 } else {
                     // No feedback yet — tap opens feedback sheet
-                    let missedInfo = missedWorkoutDetector.missedInfo(for: plan.plan.id) ?? MissedWorkoutInfo(
-                        id: plan.plan.id,
-                        displayName: workoutDisplayName(for: plan),
-                        scheduledDate: Calendar.current.date(from: plan.date) ?? Date()
-                    )
+                    let missedInfo = missedWorkoutDetector.missedInfo(for: plan.plan.id) ?? info(for: plan)
                     Button {
                         feedbackWorkout = missedInfo
                     } label: {
@@ -361,6 +366,13 @@ private struct DayDetailSection: View {
                     .innerCardStyle()
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        feedbackWorkout = info(for: plan)
+                    } label: {
+                        Label("Change Plans…", systemImage: "calendar.badge.clock")
+                    }
+                }
             }
         case .strengthSession(let entry):
             // Display-only Hevy session. When completed, link through to the

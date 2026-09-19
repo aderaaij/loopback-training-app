@@ -199,6 +199,13 @@ struct TrainingTabView: View {
                                 } label: {
                                     ScheduledWorkoutRow(scheduled: scheduled)
                                 }
+                                .contextMenu {
+                                    Button {
+                                        feedbackWorkout = info(for: scheduled)
+                                    } label: {
+                                        Label("Change Plans…", systemImage: "calendar.badge.clock")
+                                    }
+                                }
                             }
                         } header: {
                             LBSectionHeader(title: "Upcoming Workouts")
@@ -211,7 +218,7 @@ struct TrainingTabView: View {
                     if !missedCurrentPlanWorkouts.isEmpty {
                         Section {
                             ForEach(missedCurrentPlanWorkouts, id: \.self) { scheduled in
-                                if let feedback = existingFeedback(for: scheduled.plan.id) {
+                                if let feedback = existingFeedback(for: scheduled) {
                                     // Already checked in — show reason and action
                                     HStack {
                                         ScheduledWorkoutRow(scheduled: scheduled, isMissed: true)
@@ -233,11 +240,7 @@ struct TrainingTabView: View {
                                     }
                                 } else {
                                     Button {
-                                        feedbackWorkout = MissedWorkoutInfo(
-                                            id: scheduled.plan.id,
-                                            displayName: workoutDisplayName(for: scheduled),
-                                            scheduledDate: Calendar.current.date(from: scheduled.date) ?? Date()
-                                        )
+                                        feedbackWorkout = info(for: scheduled)
                                     } label: {
                                         ScheduledWorkoutRow(scheduled: scheduled, isMissed: true)
                                     }
@@ -366,8 +369,17 @@ struct TrainingTabView: View {
         }
     }
 
-    private func existingFeedback(for workoutId: UUID) -> WorkoutFeedback? {
-        feedbackEntries.first { $0.workoutId == workoutId && !$0.dismissed }
+    private func existingFeedback(for scheduled: ScheduledWorkoutPlan) -> WorkoutFeedback? {
+        guard let scheduledDate = Calendar.current.date(from: scheduled.date) else { return nil }
+        return feedbackEntries.first { $0.covers(workoutId: scheduled.plan.id, scheduledOn: scheduledDate) && !$0.dismissed }
+    }
+
+    private func info(for scheduled: ScheduledWorkoutPlan) -> MissedWorkoutInfo {
+        MissedWorkoutInfo(
+            id: scheduled.plan.id,
+            displayName: workoutDisplayName(for: scheduled),
+            scheduledDate: Calendar.current.date(from: scheduled.date) ?? Date()
+        )
     }
 
     private func workoutDisplayName(for scheduled: ScheduledWorkoutPlan) -> String {

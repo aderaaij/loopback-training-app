@@ -94,20 +94,7 @@ struct MissedWorkoutBanner: View {
                 sortBy: [SortDescriptor(\.detectedAt, order: .reverse)]
             )
             if let inserted = try? modelContext.fetch(descriptor).first {
-                let payload = WorkoutFeedbackPayload(
-                    id: inserted.id,
-                    workoutId: inserted.workoutId,
-                    workoutName: inserted.workoutName,
-                    scheduledDate: inserted.scheduledDate,
-                    detectedAt: inserted.detectedAt,
-                    acknowledgedAt: inserted.acknowledgedAt,
-                    reason: inserted.reason.rawValue,
-                    reasonNote: inserted.reasonNote,
-                    action: inserted.action.rawValue,
-                    newDate: inserted.newDate,
-                    dismissed: inserted.dismissed
-                )
-                scheduleManager.feedbackSync.syncFeedback(payload, feedbackId: inserted.id, modelContext: modelContext)
+                scheduleManager.feedbackSync.syncFeedback(inserted.payload, feedbackId: inserted.id, modelContext: modelContext)
             }
         }
     }

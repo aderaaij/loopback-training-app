@@ -42,21 +42,8 @@ final class FeedbackSyncService {
         }
 
         for feedback in unsynced {
-            let payload = WorkoutFeedbackPayload(
-                id: feedback.id,
-                workoutId: feedback.workoutId,
-                workoutName: feedback.workoutName,
-                scheduledDate: feedback.scheduledDate,
-                detectedAt: feedback.detectedAt,
-                acknowledgedAt: feedback.acknowledgedAt,
-                reason: feedback.reason.rawValue,
-                reasonNote: feedback.reasonNote,
-                action: feedback.action.rawValue,
-                newDate: feedback.newDate,
-                dismissed: feedback.dismissed
-            )
             do {
-                try await apiClient.submitFeedback(payload)
+                try await apiClient.submitFeedback(feedback.payload)
                 feedback.synced = true
             } catch {
                 AppLog.sync.error("Retry sync failed for feedback \(feedback.id, privacy: .public): \(error.localizedDescription, privacy: .public)")

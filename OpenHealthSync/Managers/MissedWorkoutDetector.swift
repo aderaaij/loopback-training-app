@@ -4,7 +4,7 @@
 //
 //  Compares scheduled workouts against the current date to detect
 //  missed (past-due, incomplete) workouts. Filters out workouts
-//  that already have feedback entries in SwiftData.
+//  already checked in for their current date in SwiftData.
 //
 
 import Foundation
@@ -40,12 +40,14 @@ class MissedWorkoutDetector {
         }
 
         // Query SwiftData for existing feedback entries to exclude
-        let pastDueIds = pastDue.map(\.plan.id)
-        let existingFeedback = fetchExistingFeedbackIds(for: pastDueIds, modelContext: modelContext)
+        let existingFeedback = (try? modelContext.fetch(FetchDescriptor<WorkoutFeedback>())) ?? []
 
         missedWorkouts = pastDue.compactMap { scheduled -> MissedWorkoutInfo? in
             let workoutId = scheduled.plan.id
-            guard !existingFeedback.contains(workoutId) else { return nil }
+            let scheduledDate = Calendar.current.date(from: scheduled.date) ?? .distantPast
+            guard !existingFeedback.contains(where: { $0.covers(workoutId: workoutId, scheduledOn: scheduledDate) }) else {
+                return nil
+            }
 
             let name: String
             switch scheduled.plan.workout {
@@ -60,8 +62,6 @@ class MissedWorkoutDetector {
             @unknown default:
                 name = "Workout"
             }
-
-            let scheduledDate = Calendar.current.date(from: scheduled.date) ?? .distantPast
 
             return MissedWorkoutInfo(
                 id: workoutId,
@@ -97,21 +97,5 @@ class MissedWorkoutDetector {
     /// Returns the MissedWorkoutInfo for a given workout ID, if it's missed.
     func missedInfo(for workoutId: UUID) -> MissedWorkoutInfo? {
         missedWorkouts.first { $0.id == workoutId }
-    }
-
-    // MARK: - Private
-
-    private func fetchExistingFeedbackIds(
-        for workoutIds: [UUID],
-        modelContext: ModelContext
-    ) -> Set<UUID> {
-        let descriptor = FetchDescriptor<WorkoutFeedback>()
-        guard let allFeedback = try? modelContext.fetch(descriptor) else {
-            return []
-        }
-        let matchingIds = allFeedback
-            .filter { workoutIds.contains($0.workoutId) }
-            .map(\.workoutId)
-        return Set(matchingIds)
     }
 }

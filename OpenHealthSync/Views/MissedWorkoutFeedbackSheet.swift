@@ -2,8 +2,9 @@
 //  MissedWorkoutFeedbackSheet.swift
 //  OpenHealthSync
 //
-//  Bottom sheet for collecting feedback when a workout is missed.
-//  Two steps: reason picker (tappable chips) + action picker (3 CTAs).
+//  Bottom sheet for collecting feedback when a workout is missed, or when the
+//  athlete moves or skips a run before it's due ("Change of plans").
+//  Two steps: reason picker (tappable chips) + action picker.
 //  Handles multi-miss batching by advancing through the queue.
 //
 
@@ -15,7 +16,8 @@ import os
 
 struct MissedWorkoutFeedbackFlow: View {
     let missedWorkouts: [MissedWorkoutInfo]
-    var detector: MissedWorkoutDetector
+    /// Nil when changing an upcoming run, which the detector never lists.
+    var detector: MissedWorkoutDetector?
     @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @Environment(\.dismiss) private var dismiss
 
@@ -31,7 +33,7 @@ struct MissedWorkoutFeedbackFlow: View {
                     scheduleManager: scheduleManager,
                     onComplete: { handledWorkout in
                         // Remove from detector so banner/indicators update immediately
-                        detector.missedWorkouts.removeAll { $0.id == handledWorkout.id }
+                        detector?.missedWorkouts.removeAll { $0.id == handledWorkout.id }
                         advanceOrDismiss()
                     }
                 )
@@ -66,7 +68,14 @@ struct MissedWorkoutFeedbackSheet: View {
     @State private var reasonNote = ""
     @State private var showReschedulePicker = false
     @State private var showAdjustConfirmation = false
-    @State private var isRescheduling = false
+    /// A change is on its way to the server; the actions are locked meanwhile.
+    @State private var isSaving = false
+    /// Shown under the actions when the server couldn't be told, so nothing changed.
+    @State private var saveError: String?
+    /// The move went through but a run it should have made room for is still on.
+    @State private var partialFailure: String?
+
+    private static let unsavedMessage = "Couldn't reach your server, so nothing changed. Try again once you're connected."
 
     var body: some View {
         ScrollView {
@@ -104,32 +113,32 @@ struct MissedWorkoutFeedbackSheet: View {
         .scrollContentBackground(.hidden)
         .presentationBackground(LB.bg)
         .presentationDragIndicator(.visible)
-        .navigationTitle("Check in")
+        .navigationTitle(workout.isUpcoming ? "Change plans" : "Check in")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
+                    .disabled(isSaving)
             }
         }
         .sheet(isPresented: $showReschedulePicker) {
             RescheduleDatePicker(
                 workout: workout,
-                onConfirm: { newDate in
-                    saveFeedback(action: .move, newDate: newDate)
-                    isRescheduling = true
-                    Task {
-                        let success = await scheduleManager.rescheduleWorkout(
-                            id: workout.id,
-                            to: newDate
-                        )
-                        isRescheduling = false
-                        if !success {
-                            AppLog.scheduling.error("Failed to reschedule workout \(workout.id, privacy: .public) to \(newDate, privacy: .public)")
-                        }
-                        onComplete(workout)
-                    }
+                onConfirm: { newDate, skipping in
+                    move(to: newDate, skipping: skipping)
                 }
             )
+        }
+        .alert(
+            "Moved, but not everything",
+            isPresented: Binding(
+                get: { partialFailure != nil },
+                set: { if !$0 { partialFailure = nil } }
+            )
+        ) {
+            Button("OK") { onComplete(workout) }
+        } message: {
+            Text(partialFailure ?? "")
         }
         .overlay {
             if showAdjustConfirmation {
@@ -150,12 +159,12 @@ struct MissedWorkoutFeedbackSheet: View {
             }
 
             HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: workout.isUpcoming ? "calendar.badge.clock" : "exclamationmark.triangle.fill")
                     .font(.system(size: 30))
-                    .foregroundStyle(LB.amber)
+                    .foregroundStyle(workout.isUpcoming ? LB.accent : LB.amber)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Missed workout")
+                    Text(workout.isUpcoming ? "Change of plans" : "Missed workout")
                         .font(.lbDisplay(18, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text("\(workout.displayName.uppercased()) · \(workout.scheduledDate.formatted(.dateTime.day().month(.abbreviated)).uppercased())")
@@ -210,27 +219,51 @@ struct MissedWorkoutFeedbackSheet: View {
                     showReschedulePicker = true
                 }
 
-                actionButton(
-                    title: "Adjust plan",
-                    subtitle: "We'll bring this up next time you review your plan",
-                    icon: "arrow.triangle.branch",
-                    style: .secondary
-                ) {
-                    saveFeedback(action: .adjust)
-                    showAdjustConfirmation = true
-                }
+                if workout.isUpcoming {
+                    actionButton(
+                        title: "Skip this run",
+                        subtitle: "Takes it off your watch",
+                        icon: "forward.fill",
+                        style: .secondary
+                    ) {
+                        skipUpcoming()
+                    }
+                } else {
+                    actionButton(
+                        title: "Adjust plan",
+                        subtitle: "We'll bring this up next time you review your plan",
+                        icon: "arrow.triangle.branch",
+                        style: .secondary
+                    ) {
+                        saveFeedback(action: .adjust)
+                        showAdjustConfirmation = true
+                    }
 
-                actionButton(
-                    title: "Skip this one",
-                    subtitle: "No changes needed",
-                    icon: "forward.fill",
-                    style: .secondary
-                ) {
-                    saveFeedback(action: .skip)
-                    onComplete(workout)
+                    actionButton(
+                        title: "Skip this one",
+                        subtitle: "No changes needed",
+                        icon: "forward.fill",
+                        style: .secondary
+                    ) {
+                        saveFeedback(action: .skip)
+                        onComplete(workout)
+                    }
                 }
             }
+            .disabled(isSaving)
             .padding(.horizontal)
+
+            if isSaving {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+            } else if let saveError {
+                Text(saveError)
+                    .font(.lbBody(13))
+                    .foregroundStyle(LB.amber)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+            }
         }
     }
 
@@ -276,10 +309,9 @@ struct MissedWorkoutFeedbackSheet: View {
 
     // MARK: - Save
 
-    private func saveFeedback(action: MissedWorkoutAction, newDate: Date? = nil) {
-        guard let reason = selectedReason else { return }
-
-        let feedback = WorkoutFeedback(
+    private func makeFeedback(action: MissedWorkoutAction, newDate: Date? = nil) -> WorkoutFeedback? {
+        guard let reason = selectedReason else { return nil }
+        return WorkoutFeedback(
             workoutId: workout.id,
             workoutName: workout.displayName,
             scheduledDate: workout.scheduledDate,
@@ -288,23 +320,105 @@ struct MissedWorkoutFeedbackSheet: View {
             reasonNote: reason == .other ? reasonNote : nil,
             newDate: newDate
         )
-        modelContext.insert(feedback)
+    }
 
-        // Fire-and-forget sync to training API
-        let payload = WorkoutFeedbackPayload(
-            id: feedback.id,
-            workoutId: feedback.workoutId,
-            workoutName: feedback.workoutName,
-            scheduledDate: feedback.scheduledDate,
-            detectedAt: feedback.detectedAt,
-            acknowledgedAt: feedback.acknowledgedAt,
-            reason: feedback.reason.rawValue,
-            reasonNote: feedback.reasonNote,
-            action: feedback.action.rawValue,
-            newDate: feedback.newDate,
-            dismissed: feedback.dismissed
-        )
-        scheduleManager.feedbackSync.syncFeedback(payload, feedbackId: feedback.id, modelContext: modelContext)
+    /// Records a missed-run check-in locally and uploads it fire-and-forget;
+    /// a failed upload is retried by the next refresh.
+    private func saveFeedback(action: MissedWorkoutAction, newDate: Date? = nil) {
+        guard let feedback = makeFeedback(action: action, newDate: newDate) else { return }
+        modelContext.insert(feedback)
+        scheduleManager.feedbackSync.syncFeedback(feedback.payload, feedbackId: feedback.id, modelContext: modelContext)
+    }
+
+    /// Records a check-in the server has already accepted.
+    private func insertSynced(_ feedback: WorkoutFeedback) {
+        feedback.synced = true
+        modelContext.insert(feedback)
+    }
+
+    /// Skips a run that isn't due yet. Unlike a missed-run check-in this
+    /// waits for the server: until the server knows, the watch keeps the run.
+    private func skipUpcoming() {
+        guard let feedback = makeFeedback(action: .skip) else { return }
+        isSaving = true
+        saveError = nil
+        Task {
+            defer { isSaving = false }
+            do {
+                try await scheduleManager.skipUpcomingWorkout(feedback.payload)
+            } catch {
+                AppLog.scheduling.error("Failed to skip workout \(workout.id, privacy: .public): \(String(describing: error), privacy: .public)")
+                saveError = Self.unsavedMessage
+                return
+            }
+            insertSynced(feedback)
+            Task { await scheduleManager.refreshAfterPlanChange() }
+            onComplete(workout)
+        }
+    }
+
+    /// Moves the run, then skips whatever already sits on the new day when the
+    /// athlete chose "Move & skip". A missed run moves the way it always has
+    /// (locally first, uploaded fire-and-forget); an upcoming one waits for
+    /// the server, like a skip.
+    private func move(to newDate: Date, skipping others: [MissedWorkoutInfo]) {
+        guard let feedback = makeFeedback(action: .move, newDate: newDate) else { return }
+        isSaving = true
+        saveError = nil
+        Task {
+            defer { isSaving = false }
+            if workout.isUpcoming {
+                do {
+                    try await scheduleManager.moveUpcomingWorkout(feedback.payload, to: newDate)
+                } catch {
+                    AppLog.scheduling.error("Failed to move workout \(workout.id, privacy: .public): \(String(describing: error), privacy: .public)")
+                    saveError = Self.unsavedMessage
+                    return
+                }
+                insertSynced(feedback)
+            } else {
+                modelContext.insert(feedback)
+                scheduleManager.feedbackSync.syncFeedback(feedback.payload, feedbackId: feedback.id, modelContext: modelContext)
+                if !(await scheduleManager.rescheduleWorkout(id: workout.id, to: newDate)) {
+                    AppLog.scheduling.error("Failed to reschedule workout \(workout.id, privacy: .public) to \(newDate, privacy: .public)")
+                }
+            }
+
+            let stillOn = await skipToMakeRoom(others)
+            if workout.isUpcoming || !others.isEmpty {
+                Task { await scheduleManager.refreshAfterPlanChange() }
+            }
+            if stillOn.isEmpty {
+                onComplete(workout)
+            } else {
+                let names = stillOn.map(\.displayName).joined(separator: ", ")
+                partialFailure = "\(workout.displayName) is on its new day, but \(names) couldn't be skipped because your server was unreachable. You can skip it from its own screen."
+            }
+        }
+    }
+
+    /// Skips the runs on the day this one moved to. Returns the ones the
+    /// server couldn't be told about, which stay on the watch.
+    private func skipToMakeRoom(_ others: [MissedWorkoutInfo]) async -> [MissedWorkoutInfo] {
+        var stillOn: [MissedWorkoutInfo] = []
+        for other in others {
+            let feedback = WorkoutFeedback(
+                workoutId: other.id,
+                workoutName: other.displayName,
+                scheduledDate: other.scheduledDate,
+                reason: .other,
+                action: .skip,
+                reasonNote: "Made room for \(workout.displayName)"
+            )
+            do {
+                try await scheduleManager.skipUpcomingWorkout(feedback.payload)
+                insertSynced(feedback)
+            } catch {
+                AppLog.scheduling.error("Failed to skip workout \(other.id, privacy: .public) to make room: \(String(describing: error), privacy: .public)")
+                stillOn.append(other)
+            }
+        }
+        return stillOn
     }
 
     // MARK: - Action Button Helper

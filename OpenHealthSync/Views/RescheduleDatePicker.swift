@@ -3,8 +3,9 @@
 //  OpenHealthSync
 //
 //  Lightweight date picker shown when the user taps "Reschedule" in the
-//  missed workout feedback sheet. Shows a horizontal week view with
-//  existing workout dots, and warns if the selected day already has a workout.
+//  missed workout feedback sheet, or moves a run ahead of time. Shows a
+//  horizontal week view with existing workout dots, and when the selected day
+//  already has a workout, offers to skip that one or keep both.
 //
 
 import SwiftUI
@@ -12,18 +13,24 @@ import WorkoutKit
 
 struct RescheduleDatePicker: View {
     let workout: MissedWorkoutInfo
-    let onConfirm: (Date) -> Void
+    /// The new date, and the runs already on that day to skip to make room.
+    let onConfirm: (_ newDate: Date, _ skipping: [MissedWorkoutInfo]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkoutScheduleManager.self) private var scheduleManager
 
-    @State private var selectedDate: Date = {
-        // Default to tomorrow
-        Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-    }()
-    @State private var showCollisionWarning = false
+    @State private var selectedDate: Date
 
     private let calendar = Calendar.current
+
+    init(workout: MissedWorkoutInfo, onConfirm: @escaping (_ newDate: Date, _ skipping: [MissedWorkoutInfo]) -> Void) {
+        self.workout = workout
+        self.onConfirm = onConfirm
+        // A run that isn't due yet defaults to the day after it; a missed one
+        // to tomorrow.
+        let from = workout.isUpcoming ? workout.scheduledDate : Date()
+        _selectedDate = State(initialValue: Calendar.current.date(byAdding: .day, value: 1, to: from) ?? from)
+    }
 
     /// Dates for the next 14 days starting from today.
     private var availableDates: [Date] {
@@ -31,13 +38,13 @@ struct RescheduleDatePicker: View {
         return (0..<14).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
     }
 
-    /// Map of day components to scheduled workout names for collision detection.
-    private var scheduledByDay: [DateComponents: [String]] {
-        var result: [DateComponents: [String]] = [:]
+    /// Incomplete workouts per day, other than the one being moved.
+    private var scheduledByDay: [DateComponents: [MissedWorkoutInfo]] {
+        var result: [DateComponents: [MissedWorkoutInfo]] = [:]
         for scheduled in scheduleManager.scheduledWorkouts {
-            guard !scheduled.complete else { continue }
-            let dc = calendar.dateComponents([.year, .month, .day], from:
-                calendar.date(from: scheduled.date) ?? .distantPast)
+            guard !scheduled.complete, scheduled.plan.id != workout.id else { continue }
+            let date = calendar.date(from: scheduled.date) ?? .distantPast
+            let dc = calendar.dateComponents([.year, .month, .day], from: date)
             let name: String
             switch scheduled.plan.workout {
             case .custom(let custom):
@@ -51,9 +58,31 @@ struct RescheduleDatePicker: View {
             @unknown default:
                 name = "Workout"
             }
-            result[dc, default: []].append(name)
+            result[dc, default: []].append(
+                MissedWorkoutInfo(id: scheduled.plan.id, displayName: name, scheduledDate: date)
+            )
         }
         return result
+    }
+
+    /// The day the run already sits on. Only reachable for a run that isn't
+    /// due yet (a missed run's day is in the past), and moving it there
+    /// changes nothing.
+    private func isCurrentDay(_ date: Date) -> Bool {
+        calendar.isDate(date, inSameDayAs: workout.scheduledDate)
+    }
+
+    /// The picked day at the run's original time of day. A bare day would be
+    /// local midnight, which the server (bucketing by UTC date) files under
+    /// the day before anywhere east of UTC.
+    private var newDate: Date {
+        let time = calendar.dateComponents([.hour, .minute], from: workout.scheduledDate)
+        return calendar.date(
+            bySettingHour: time.hour ?? 0,
+            minute: time.minute ?? 0,
+            second: 0,
+            of: selectedDate
+        ) ?? selectedDate
     }
 
     var body: some View {
@@ -76,9 +105,11 @@ struct RescheduleDatePicker: View {
                             date: date,
                             isToday: calendar.isDateInToday(date),
                             isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            isCurrentDay: isCurrentDay(date),
                             hasWorkout: workoutsOnDay(date) != nil
                         )
                         .onTapGesture {
+                            guard !isCurrentDay(date) else { return }
                             selectedDate = date
                         }
                     }
@@ -91,7 +122,7 @@ struct RescheduleDatePicker: View {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
                             .font(.caption)
-                        Text("You already have \(existingWorkouts.joined(separator: ", ")) on this day. Schedule both?")
+                        Text("You already have \(names(existingWorkouts)) on this day.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -104,16 +135,18 @@ struct RescheduleDatePicker: View {
 
                 Spacer()
 
-                // Confirm button
-                Button {
-                    onConfirm(selectedDate)
-                    dismiss()
-                } label: {
-                    Text("Confirm")
-                        .font(.body.weight(.medium))
-                        .frame(maxWidth: .infinity)
+                // Confirm buttons
+                VStack(spacing: 10) {
+                    if let existingWorkouts = workoutsOnDay(selectedDate) {
+                        confirmButton("Move & skip \(names(existingWorkouts))", skipping: existingWorkouts)
+                            .buttonStyle(.borderedProminent)
+                        confirmButton("Keep both", skipping: [])
+                            .buttonStyle(.bordered)
+                    } else {
+                        confirmButton("Confirm", skipping: [])
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .padding(.horizontal)
                 .padding(.bottom)
@@ -125,13 +158,30 @@ struct RescheduleDatePicker: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 
-    private func workoutsOnDay(_ date: Date) -> [String]? {
+    private func confirmButton(_ title: String, skipping: [MissedWorkoutInfo]) -> some View {
+        Button {
+            onConfirm(newDate, skipping)
+            dismiss()
+        } label: {
+            Text(title)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(isCurrentDay(selectedDate))
+    }
+
+    private func workoutsOnDay(_ date: Date) -> [MissedWorkoutInfo]? {
         let dc = calendar.dateComponents([.year, .month, .day], from: date)
-        guard let names = scheduledByDay[dc], !names.isEmpty else { return nil }
-        return names
+        guard let workouts = scheduledByDay[dc], !workouts.isEmpty else { return nil }
+        return workouts
+    }
+
+    private func names(_ workouts: [MissedWorkoutInfo]) -> String {
+        workouts.map(\.displayName).joined(separator: ", ")
     }
 }
 
@@ -141,6 +191,8 @@ private struct RescheduleDayCell: View {
     let date: Date
     let isToday: Bool
     let isSelected: Bool
+    /// The day the run already sits on — shown, but not pickable.
+    let isCurrentDay: Bool
     let hasWorkout: Bool
 
     var body: some View {
@@ -175,6 +227,7 @@ private struct RescheduleDayCell: View {
                     .stroke(Color.accentColor, lineWidth: 1.5)
             }
         }
+        .opacity(isCurrentDay ? 0.35 : 1)
     }
 }
 
@@ -187,8 +240,8 @@ private struct RescheduleDayCell: View {
         scheduledDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!
     )
 
-    RescheduleDatePicker(workout: workout) { newDate in
-        print("Rescheduled to \(newDate)")
+    RescheduleDatePicker(workout: workout) { newDate, skipping in
+        print("Rescheduled to \(newDate), skipping \(skipping.map(\.displayName))")
     }
     .environment(WorkoutScheduleManager(apiClient: WorkoutAPIClient()))
 }
