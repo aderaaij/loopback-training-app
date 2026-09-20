@@ -229,6 +229,11 @@ class WorkoutManager {
 
         let candidates: [(UUID, TimeInterval)] = planWorkouts.compactMap { pw in
             guard pw.activityType == activityKey else { return nil }
+            // A run the athlete skipped isn't the one they just did, and
+            // leaving it in makes the exactly-one rule below give up: moving a
+            // run onto an occupied day and skipping what was there puts two
+            // runs on the same hour by design.
+            guard pw.status != "skipped" else { return nil }
 
             let date = pw.scheduledDate ?? scheduleManager.scheduledDate(for: pw.id)
             guard let date else { return nil }
