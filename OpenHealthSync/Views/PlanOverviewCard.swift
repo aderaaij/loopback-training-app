@@ -14,6 +14,7 @@ struct PlanOverviewCard: View {
     let planWorkouts: [PlanWorkout]
     let scheduledWorkouts: [ScheduledWorkoutPlan]
 
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var selectedPhase: PlanPhase?
 
     private var completedCount: Int {
@@ -219,7 +220,7 @@ struct PlanOverviewCard: View {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(LB.accent)
-                    Text("Target: \(Int(volume)) km/week")
+                    Text("Target: \(Int(units.distanceValue(km: volume).rounded())) \(units.distanceUnit)/week")
                         .font(.lbBody(13))
                         .foregroundStyle(LB.textSecondary)
                 }
