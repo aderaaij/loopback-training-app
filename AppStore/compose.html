@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Loopback App Store screenshot</title>
+<style>
+  @font-face { font-family: "Space Grotesk"; src: url("../OpenHealthSync/Fonts/SpaceGrotesk-Bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "Hanken Grotesk"; src: url("../OpenHealthSync/Fonts/HankenGrotesk-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "JetBrains Mono"; src: url("../OpenHealthSync/Fonts/JetBrainsMono-Medium.ttf"); font-weight: 500; }
+  :root { --bg: #0c0a09; --cream: #f2ece0; --muted: #9a9286; --accent: #ff6a3d; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1320px; height: 2868px; overflow: hidden; background: var(--bg); }
+  .canvas {
+    position: relative; width: 1320px; height: 2868px; overflow: hidden;
+    background:
+      radial-gradient(900px 700px at 50% 62%, rgba(255, 106, 61, 0.13), transparent 70%),
+      var(--bg);
+  }
+  /* Corner ticks: the same registration marks the app draws on its plan card. */
+  .tick { position: absolute; width: 44px; height: 44px; border: 0 solid rgba(242, 236, 224, 0.28); }
+  .tick.tl { top: 64px; left: 64px; border-top-width: 3px; border-left-width: 3px; }
+  .tick.tr { top: 64px; right: 64px; border-top-width: 3px; border-right-width: 3px; }
+  .copy { position: absolute; top: 196px; left: 110px; right: 110px; }
+  .label {
+    font: 500 34px/1 "JetBrains Mono", monospace; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin-top: 40px;
+    font: 700 128px/1.02 "Space Grotesk", sans-serif; letter-spacing: -0.035em; color: var(--cream);
+    text-wrap: balance;
+  }
+  .phone {
+    position: absolute; left: 50%; top: 742px; width: 950px; transform: translateX(-50%);
+    border-radius: 118px; overflow: hidden;
+    box-shadow: 0 0 0 3px rgba(242, 236, 224, 0.16), 0 0 0 16px #17130d, 0 0 0 18px rgba(242, 236, 224, 0.08),
+                0 60px 140px rgba(0, 0, 0, 0.6);
+  }
+  .phone img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <i class="tick tl"></i><i class="tick tr"></i>
+  <div class="copy">
+    <p class="label" id="label"></p>
+    <h1 id="headline"></h1>
+  </div>
+  <div class="phone"><img id="shot" alt=""></div>
+</div>
+<script>
+  const SHOTS = {
+    "1": ["Self-hosted running coach", "Your training plan, on your own server.", "01-training.png"],
+    "2": ["Apple Watch", "Structured workouts, sent to your watch.", "02-planned-tempo.png"],
+    "3": ["After the run", "Every run, down to the last split.", "03-run-top.png"],
+    "4": ["Beyond the run", "See how you fuel the work.", "04-trends-fuel.png"],
+    "5": ["Your data, your rules", "You choose what your coach sees.", "05-sharing.png"],
+  };
+  const [label, headline, file] = SHOTS[new URLSearchParams(location.search).get("n") || "1"];
+  document.getElementById("label").textContent = label;
+  document.getElementById("headline").textContent = headline;
+  document.getElementById("shot").src = "raw/" + file;
+</script>
+</body>
+</html>
