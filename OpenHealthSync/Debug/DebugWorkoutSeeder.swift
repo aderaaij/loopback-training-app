@@ -53,16 +53,42 @@ final class DebugWorkoutSeeder {
     private static let distanceType = HKQuantityType(.distanceWalkingRunning)
     private static let energyType = HKQuantityType(.activeEnergyBurned)
 
-    private static let shareTypes: Set<HKSampleType> = [
-        HKWorkoutType.workoutType(),
-        heartRateType,
-        distanceType,
-        energyType,
-        HKSeriesType.workoutRoute(),
+    /// Daily-health types seeded alongside the workouts, so every data domain
+    /// (recovery, body, activity, nutrition) has recent readings in the
+    /// simulator — not just training.
+    private static let healthQuantityTypes: [HKQuantityTypeIdentifier] = [
+        .restingHeartRate, .heartRateVariabilitySDNN, .respiratoryRate, .oxygenSaturation,
+        .bodyMass, .bodyFatPercentage, .leanBodyMass, .vo2Max,
+        .stepCount, .basalEnergyBurned,
+        .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates,
+        .dietaryFatTotal, .dietaryFiber,
     ]
 
-    // Praça do Comércio-ish riverside start point.
-    private static let startCoordinate = CLLocationCoordinate2D(latitude: 38.7075, longitude: -9.1364)
+    private static let shareTypes: Set<HKSampleType> = {
+        var types: Set<HKSampleType> = [
+            HKWorkoutType.workoutType(),
+            heartRateType,
+            distanceType,
+            energyType,
+            HKSeriesType.workoutRoute(),
+            HKCategoryType(.sleepAnalysis),
+        ]
+        for id in healthQuantityTypes { types.insert(HKQuantityType(id)) }
+        return types
+    }()
+
+    /// Lisbon riverfront path, Alcântara → Belém — the same waypoints as the
+    /// server's `scripts/seed_demo.py`, so the app-seeded and server-seeded
+    /// demos draw the same route. (A straight line from Praça do Comércio put
+    /// the runner in the Tagus.)
+    private static let routeWaypoints: [CLLocationCoordinate2D] = [
+        CLLocationCoordinate2D(latitude: 38.70450, longitude: -9.17540),
+        CLLocationCoordinate2D(latitude: 38.70180, longitude: -9.18240),
+        CLLocationCoordinate2D(latitude: 38.69890, longitude: -9.19110),
+        CLLocationCoordinate2D(latitude: 38.69720, longitude: -9.19980),
+        CLLocationCoordinate2D(latitude: 38.69510, longitude: -9.20820),
+        CLLocationCoordinate2D(latitude: 38.69260, longitude: -9.21600),
+    ]
 
     // MARK: - Seeding
 
@@ -146,7 +172,13 @@ final class DebugWorkoutSeeder {
             if markAsSynced {
                 markSent(seededIDs)
             }
-            statusMessage = "Seeded \(seededIDs.count) workouts\(markAsSynced ? " (marked as synced)" : "")."
+
+            // After the workouts, so their random sequence — and with it the
+            // demo story — is unchanged by the health samples.
+            statusMessage = "Seeding daily health data…"
+            let healthCount = try await seedHealthSamples(rng: &rng)
+
+            statusMessage = "Seeded \(seededIDs.count) workouts\(markAsSynced ? " (marked as synced)" : "") and \(healthCount) health samples."
         } catch {
             statusMessage = "Seeding failed: \(error.localizedDescription)"
         }
@@ -399,22 +431,42 @@ final class DebugWorkoutSeeder {
         let interval: TimeInterval = 15
         let halfway = duration / 2
         let metersPerDegreeLat = 111_111.0
-        let metersPerDegreeLon = metersPerDegreeLat * cos(Self.startCoordinate.latitude * .pi / 180)
+        let metersPerDegreeLon = metersPerDegreeLat * cos(Self.routeWaypoints[0].latitude * .pi / 180)
+
+        // Cumulative metres along the waypoint path.
+        var cumulative: [Double] = [0]
+        for (a, b) in zip(Self.routeWaypoints, Self.routeWaypoints.dropFirst()) {
+            let dy = (b.latitude - a.latitude) * metersPerDegreeLat
+            let dx = (b.longitude - a.longitude) * metersPerDegreeLon
+            cumulative.append(cumulative.last! + (dx * dx + dy * dy).squareRoot())
+        }
+        let pathLength = cumulative.last!
 
         var locations: [CLLocation] = []
         var t: TimeInterval = 0
         while t <= duration {
-            // Distance from start along the out-and-back line.
+            // Distance from the start of the out-and-back. Runs longer than
+            // twice the path fold back along it rather than running off its end.
             let along = t <= halfway ? speed * t : speed * (duration - t)
-            let wiggle = sin(t / 40) * 25 + Double.random(in: -6...6, using: &rng)
+            var onPath = along.truncatingRemainder(dividingBy: 2 * pathLength)
+            if onPath > pathLength { onPath = 2 * pathLength - onPath }
+
+            let segment = min(cumulative.lastIndex { $0 <= onPath } ?? 0, Self.routeWaypoints.count - 2)
+            let from = Self.routeWaypoints[segment], to = Self.routeWaypoints[segment + 1]
+            let segmentLength = cumulative[segment + 1] - cumulative[segment]
+            let fraction = segmentLength > 0 ? (onPath - cumulative[segment]) / segmentLength : 0
+            // GPS-like jitter, kept small so the trace stays on the promenade.
+            let jitter = Double.random(in: -4...4, using: &rng)
+
             // Route collection stops while paused: points after the pause
             // shift by its length, leaving the wall-clock gap the extractor
             // has to subtract from the enclosing split.
             let wallOffset = pause.map { t > $0.at ? t + $0.duration : t } ?? t
             locations.append(CLLocation(
                 coordinate: CLLocationCoordinate2D(
-                    latitude: Self.startCoordinate.latitude + wiggle / metersPerDegreeLat,
-                    longitude: Self.startCoordinate.longitude + along / metersPerDegreeLon
+                    latitude: from.latitude + (to.latitude - from.latitude) * fraction
+                        + jitter / metersPerDegreeLat,
+                    longitude: from.longitude + (to.longitude - from.longitude) * fraction
                 ),
                 altitude: 8,
                 horizontalAccuracy: 5,
@@ -424,6 +476,115 @@ final class DebugWorkoutSeeder {
             t += interval
         }
         return locations
+    }
+
+    // MARK: - Daily health data
+
+    /// Thirty days of the non-workout data the other domains read: nightly
+    /// sleep stages, morning recovery readings, weekly body measurements,
+    /// daily steps and resting energy, and logged food. Values wander around a
+    /// plausible recreational runner's baseline; nothing here is tuned to the
+    /// training load.
+    private func seedHealthSamples(rng: inout SeededGenerator) async throws -> Int {
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        var objects: [HKObject] = []
+
+        func quantity(_ id: HKQuantityTypeIdentifier, _ value: Double, _ unit: HKUnit,
+                      from start: Date, to end: Date? = nil) {
+            let end = end ?? start
+            guard end <= now else { return }
+            objects.append(HKQuantitySample(type: HKQuantityType(id),
+                                            quantity: HKQuantity(unit: unit, doubleValue: value),
+                                            start: start, end: end))
+        }
+
+        let perMinute = HKUnit.count().unitDivided(by: .minute())
+        let kcal = HKUnit.kilocalorie()
+        let gram = HKUnit.gram()
+
+        for daysAgo in 0..<30 {
+            let day = calendar.date(byAdding: .day, value: -daysAgo, to: today)!
+            func at(_ hour: Int, _ minute: Int = 0) -> Date {
+                calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day)!
+            }
+
+            // Sleep: the night ending this morning, as repeating stage cycles.
+            let wake = at(6, 10 + Int.random(in: 0...25, using: &rng))
+            var cursor = wake.addingTimeInterval(-Double.random(in: 6.6...8.1, using: &rng) * 3600)
+            let cycle: [(HKCategoryValueSleepAnalysis, ClosedRange<Double>)] = [
+                (.asleepCore, 28...45), (.asleepDeep, 14...26), (.asleepCore, 18...30), (.asleepREM, 14...26),
+            ]
+            var stage = 0
+            while cursor < wake {
+                let (value, minutes) = cycle[stage % cycle.count]
+                var end = min(cursor.addingTimeInterval(Double.random(in: minutes, using: &rng) * 60), wake)
+                // One short awakening a night, after the second cycle.
+                if stage == 8, cursor.addingTimeInterval(240) <= now {
+                    end = min(cursor.addingTimeInterval(240), wake)
+                    objects.append(HKCategorySample(type: HKCategoryType(.sleepAnalysis),
+                                                    value: HKCategoryValueSleepAnalysis.awake.rawValue,
+                                                    start: cursor, end: end))
+                } else if end <= now {
+                    objects.append(HKCategorySample(type: HKCategoryType(.sleepAnalysis),
+                                                    value: value.rawValue, start: cursor, end: end))
+                }
+                cursor = end
+                stage += 1
+            }
+
+            // Recovery readings, taken overnight / on waking.
+            quantity(.restingHeartRate, Double(Int.random(in: 48...54, using: &rng)), perMinute, from: at(6, 30))
+            quantity(.heartRateVariabilitySDNN, Double.random(in: 52...78, using: &rng),
+                     .secondUnit(with: .milli), from: at(4, 30))
+            quantity(.respiratoryRate, Double.random(in: 13.2...15.4, using: &rng), perMinute, from: at(3, 30))
+            quantity(.oxygenSaturation, Double.random(in: 0.955...0.985, using: &rng), .percent(), from: at(3, 45))
+
+            // Body: a weigh-in twice a week, drifting down slowly through the block.
+            if daysAgo % 3 == 0 {
+                let mass = 61.4 + Double(daysAgo) * 0.02 + Double.random(in: -0.3...0.3, using: &rng)
+                let fat = 0.212 + Double.random(in: -0.004...0.004, using: &rng)
+                quantity(.bodyMass, mass, .gramUnit(with: .kilo), from: at(7, 5))
+                quantity(.bodyFatPercentage, fat, .percent(), from: at(7, 5))
+                quantity(.leanBodyMass, mass * (1 - fat), .gramUnit(with: .kilo), from: at(7, 5))
+            }
+            if daysAgo % 7 == 2 {
+                quantity(.vo2Max, 46.8 - Double(daysAgo) * 0.03 + Double.random(in: -0.2...0.2, using: &rng),
+                         HKUnit(from: "ml/kg*min"), from: at(7, 40))
+            }
+
+            // Activity: steps through the waking day, resting energy in blocks.
+            for hour in 8..<21 {
+                quantity(.stepCount, Double(Int.random(in: 250...1100, using: &rng)), .count(),
+                         from: at(hour), to: at(hour, 55))
+            }
+            for block in 0..<4 {
+                quantity(.basalEnergyBurned, Double.random(in: 345...372, using: &rng), kcal,
+                         from: at(block * 6), to: at(block * 6 + 5, 59))
+            }
+
+            // Nutrition: three meals and a snack. One day in ten goes unlogged.
+            if Int.random(in: 0..<10, using: &rng) != 0 {
+                let meals: [(hour: Int, share: Double)] = [(8, 0.24), (13, 0.34), (17, 0.10), (20, 0.32)]
+                let energy = Double.random(in: 2250...2850, using: &rng)
+                let protein = Double.random(in: 105...130, using: &rng)
+                let fat = Double.random(in: 68...90, using: &rng)
+                let fiber = Double.random(in: 24...34, using: &rng)
+                let carbs = (energy - protein * 4 - fat * 9) / 4
+                for meal in meals {
+                    let time = at(meal.hour, 15)
+                    quantity(.dietaryEnergyConsumed, energy * meal.share, kcal, from: time)
+                    quantity(.dietaryProtein, protein * meal.share, gram, from: time)
+                    quantity(.dietaryCarbohydrates, carbs * meal.share, gram, from: time)
+                    quantity(.dietaryFatTotal, fat * meal.share, gram, from: time)
+                    quantity(.dietaryFiber, fiber * meal.share, gram, from: time)
+                }
+            }
+        }
+
+        try await healthStore.save(objects)
+        return objects.count
     }
 
     // MARK: - Sent tracking
