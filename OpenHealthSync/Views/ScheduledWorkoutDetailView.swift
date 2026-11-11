@@ -398,7 +398,9 @@ struct ScheduledWorkoutDetailView: View {
         }
         let formatter = MeasurementFormatter()
         formatter.unitOptions = .providedUnit
-        formatter.numberFormatter.maximumFractionDigits = 1
+        // Distances get two decimals, like completed runs: at one, a mile
+        // figure is too coarse (1200 m would read 0.7 mi, not 0.75).
+        formatter.numberFormatter.maximumFractionDigits = measurement is Measurement<UnitLength> ? 2 : 1
         return formatter.string(from: measurement)
     }
 

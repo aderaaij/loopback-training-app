@@ -70,12 +70,19 @@ enum DisplayUnits: String, CaseIterable, Identifiable, Sendable {
         "\(distanceNumber(meters: meters)) \(distanceUnit)"
     }
 
-    /// A distance authored in km or miles, shown in the user's unit. Anything
-    /// else (track reps in meters, say) is returned untouched so it reads as
-    /// written.
+    /// A goal distance in the user's unit. The coach often authors a long run
+    /// in meters (11600), which nobody reads as a distance, so a kilometer or
+    /// more converts whatever it was written in. Shorter meter distances are
+    /// track reps (400 m, 800 m) and read as written in either system.
     func preferred(_ distance: Measurement<UnitLength>) -> Measurement<UnitLength> {
-        guard distance.unit == .kilometers || distance.unit == .miles else { return distance }
-        return distance.converted(to: lengthUnit)
+        switch distance.unit {
+        case .kilometers, .miles:
+            return distance.converted(to: lengthUnit)
+        case .meters where distance.value >= 1000:
+            return distance.converted(to: lengthUnit)
+        default:
+            return distance
+        }
     }
 
     // MARK: - Pace
