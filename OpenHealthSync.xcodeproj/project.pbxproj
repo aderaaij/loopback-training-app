@@ -319,6 +319,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = OpenHealthSync/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Loopback reads your workouts, sleep, recovery and nutrition from Apple Health so your coach can build and adapt your training plan.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Loopback does not add or change data in Apple Health. It only reads the data you choose to share.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
