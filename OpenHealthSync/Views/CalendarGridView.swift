@@ -113,7 +113,9 @@ struct WeekDayCell: View {
             Text(date, format: .dateTime.weekday(.abbreviated))
                 .font(.lbBody(12, .semibold))
                 .tracking(0.3)
-                .foregroundStyle(isSelected ? LB.bg.opacity(0.65) : LB.textTertiary)
+                // The label sits above the tile, on the screen background — the
+                // tile's on-accent colour would be invisible here.
+                .foregroundStyle(isSelected ? LB.accent : LB.textTertiary)
 
             VStack(spacing: 5) {
                 Text("\(Calendar.current.component(.day, from: date))")
