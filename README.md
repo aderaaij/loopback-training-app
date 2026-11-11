@@ -2,6 +2,8 @@
 
 A privacy-first training companion for iOS that connects Apple Health data to AI coaching. Manages the full workout lifecycle — plan creation, Apple Watch scheduling, execution tracking, and performance analysis — all through a self-hosted backend you control: the [Loopback Server](https://github.com/aderaaij/loopback-training-server).
 
+**[loopback.ardenlab.dev](https://loopback.ardenlab.dev/)** · [Privacy](https://loopback.ardenlab.dev/privacy/) · [Support](https://loopback.ardenlab.dev/support/)
+
 ## Features
 
 ### Training Plan Management
