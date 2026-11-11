@@ -179,7 +179,7 @@ nonisolated struct PlanCompletionResponse: Codable, Sendable {
 
 // MARK: - Plan Metadata
 
-struct TrainingPlanMetadata: Codable, Sendable {
+nonisolated struct TrainingPlanMetadata: Codable, Sendable {
     let goals: [PlanGoal]?
     let guardrails: [String]?
     let phases: [PlanPhase]?
@@ -193,9 +193,58 @@ struct TrainingPlanMetadata: Codable, Sendable {
         case goals, guardrails, phases, background, schedule
         case athleteContext = "athlete_context"
     }
+
+    /// Metadata is free-form JSON on the server — the coach writes it, and
+    /// the server's own plan validator reads `guardrails` as an object while
+    /// the coach's examples use a list of sentences. `fetchPlans` drops any
+    /// plan that fails to decode, so a strict decode here made a whole plan
+    /// vanish from the app over a field the app barely shows. Every key is
+    /// decoded on its own: an unexpected shape costs that one field, never
+    /// the plan.
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        goals = (try? c.decodeIfPresent([FailableDecodable<PlanGoal>].self, forKey: .goals))?
+            .compactMap(\.value)
+        phases = Self.zeroBased(
+            (try? c.decodeIfPresent([FailableDecodable<PlanPhase>].self, forKey: .phases))?
+                .compactMap(\.value)
+        )
+        schedule = try? c.decodeIfPresent(PlanSchedule.self, forKey: .schedule)
+        athleteContext = try? c.decodeIfPresent(AthleteContext.self, forKey: .athleteContext)
+        // Athlete context also arrives as plain prose; keep it as background
+        // rather than lose it.
+        background = (try? c.decodeIfPresent(String.self, forKey: .background))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .athleteContext))
+
+        if let sentences = try? c.decodeIfPresent([String].self, forKey: .guardrails) {
+            guardrails = sentences
+        } else if let limits = try? c.decodeIfPresent([String: PlanGoalTarget].self, forKey: .guardrails) {
+            // {"max_weekly_km": 34} → "Max weekly km: 34"
+            guardrails = limits.keys.sorted().map { key in
+                let label = key.replacingOccurrences(of: "_", with: " ")
+                return "\(label.prefix(1).uppercased())\(label.dropFirst()): \(limits[key]?.displayString ?? "")"
+            }
+        } else {
+            guardrails = nil
+        }
+    }
+
+    /// The app indexes plan weeks from 0 (`TrainingPlan.currentWeek`), but
+    /// plans in the wild number their phase weeks both ways — the coach has
+    /// written `[0], [1, 2, 3]` for one block and `[1], [2, 3]` for the next,
+    /// and its own tool example starts at 1. A plan whose phases never mention
+    /// week 0 is read as 1-based and shifted down, so the highlighted phase
+    /// matches the week counter either way. (A 0-based plan with no phase
+    /// covering its first week would be misread; none has turned up.)
+    private static func zeroBased(_ phases: [PlanPhase]?) -> [PlanPhase]? {
+        guard let phases, let first = phases.flatMap(\.weeks).min(), first >= 1 else {
+            return phases
+        }
+        return phases.map { $0.shiftingWeeks(by: -1) }
+    }
 }
 
-struct PlanGoal: Codable, Sendable {
+nonisolated struct PlanGoal: Codable, Sendable {
     let type: String
     let target: PlanGoalTarget?
     let unit: String?
@@ -212,7 +261,7 @@ struct PlanGoal: Codable, Sendable {
 /// or prose (e.g. "pre-op steady pace ~6:00-6:15/km"), depending on the goal
 /// type. Decoding it as a single Swift type would fail the whole plan, so it
 /// accepts either shape.
-enum PlanGoalTarget: Codable, Sendable {
+nonisolated enum PlanGoalTarget: Codable, Sendable {
     case number(Double)
     case text(String)
 
@@ -256,7 +305,7 @@ enum PlanGoalTarget: Codable, Sendable {
     }
 }
 
-struct PlanPhase: Codable, Sendable, Identifiable {
+nonisolated struct PlanPhase: Codable, Sendable, Identifiable {
     let name: String
     let weeks: [Int]
     let volumeTargetKm: Double?
@@ -268,9 +317,47 @@ struct PlanPhase: Codable, Sendable, Identifiable {
         case name, weeks, notes
         case volumeTargetKm = "volume_target_km"
     }
+
+    /// `weeks` is a list in the coach's examples, but free-form metadata also
+    /// carries it as a single number or a range like "1-3". All three decode
+    /// to the same list; anything else leaves the phase without weeks rather
+    /// than dropping it.
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        volumeTargetKm = try? c.decodeIfPresent(Double.self, forKey: .volumeTargetKm)
+        notes = try? c.decodeIfPresent(String.self, forKey: .notes)
+
+        if let list = try? c.decode([Int].self, forKey: .weeks) {
+            weeks = list
+        } else if let single = try? c.decode(Int.self, forKey: .weeks) {
+            weeks = [single]
+        } else if let text = try? c.decode(String.self, forKey: .weeks) {
+            let bounds = text.split(separator: "-").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            if let first = bounds.first, let last = bounds.last, first <= last {
+                weeks = Array(first...last)
+            } else {
+                weeks = []
+            }
+        } else {
+            weeks = []
+        }
+    }
+
+    private init(name: String, weeks: [Int], volumeTargetKm: Double?, notes: String?) {
+        self.name = name
+        self.weeks = weeks
+        self.volumeTargetKm = volumeTargetKm
+        self.notes = notes
+    }
+
+    func shiftingWeeks(by offset: Int) -> PlanPhase {
+        PlanPhase(name: name, weeks: weeks.map { $0 + offset },
+                  volumeTargetKm: volumeTargetKm, notes: notes)
+    }
 }
 
-struct AthleteContext: Codable, Sendable {
+nonisolated struct AthleteContext: Codable, Sendable {
     let age: Int?
     let fitnessLevel: String?
     let constraints: [String]?
