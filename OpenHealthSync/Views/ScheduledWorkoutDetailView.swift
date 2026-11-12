@@ -398,6 +398,9 @@ struct ScheduledWorkoutDetailView: View {
         }
         let formatter = MeasurementFormatter()
         formatter.unitOptions = .providedUnit
+        // A decimal point whatever the region, like every other figure in
+        // the app ("0.62 mi" beside "3.96 mi", not "0,62").
+        formatter.locale = Locale(identifier: "en_US")
         // Distances get two decimals, like completed runs: at one, a mile
         // figure is too coarse (1200 m would read 0.7 mi, not 0.75).
         formatter.numberFormatter.maximumFractionDigits = measurement is Measurement<UnitLength> ? 2 : 1
@@ -406,9 +409,13 @@ struct ScheduledWorkoutDetailView: View {
 
     private func formatAlert(_ alert: any WorkoutAlert) -> String {
         if let speedAlert = alert as? SpeedRangeAlert {
-            let lower = speedAlert.target.lowerBound
-            let upper = speedAlert.target.upperBound
-            return "Speed: \(formatMeasurement(lower)) – \(formatMeasurement(upper))"
+            // The watch stores the target as a speed, and m/s means nothing
+            // to anyone. On foot it reads as a pace; otherwise as km/h or mph.
+            let lower = speedAlert.target.lowerBound.converted(to: .metersPerSecond).value
+            let upper = speedAlert.target.upperBound.converted(to: .metersPerSecond).value
+            return isOnFoot
+                ? "Pace: \(units.paceRange(metersPerSecond: lower, upper))"
+                : "Speed: \(units.speedRange(metersPerSecond: lower, upper))"
         } else if let hrAlert = alert as? HeartRateRangeAlert {
             let lower = hrAlert.target.lowerBound
             let upper = hrAlert.target.upperBound
@@ -448,6 +455,18 @@ struct ScheduledWorkoutDetailView: View {
     }
 
     // MARK: - Computed Properties
+
+    /// Running, walking and hiking targets are paces; everything else is a speed.
+    private var isOnFoot: Bool {
+        let activity: HKWorkoutActivityType
+        switch scheduled.plan.workout {
+        case .custom(let custom): activity = custom.activity
+        case .goal(let goal): activity = goal.activity
+        case .pacer(let pacer): activity = pacer.activity
+        default: return true
+        }
+        return [.running, .walking, .hiking].contains(activity)
+    }
 
     private var workoutName: String {
         switch scheduled.plan.workout {
