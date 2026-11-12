@@ -105,4 +105,29 @@ enum DisplayUnits: String, CaseIterable, Identifiable, Sendable {
         guard meters > 0 else { return "--" }
         return "\(paceNumber(duration: duration, meters: meters)) \(paceUnit)"
     }
+
+    /// "5:03 – 5:33 /km" from a speed range in m/s, faster end first — the
+    /// way a runner reads a target, where the watch alert is stored as speed.
+    func paceRange(metersPerSecond slow: Double, _ fast: Double) -> String {
+        guard slow > 0, fast > 0 else { return "--" }
+        let fastPace = paceNumber(secondsPerKm: 1000 / max(slow, fast))
+        let slowPace = paceNumber(secondsPerKm: 1000 / min(slow, fast))
+        return "\(fastPace) – \(slowPace) \(paceUnit)"
+    }
+
+    // MARK: - Speed
+
+    /// "km/h" / "mph"
+    var speedUnit: String { self == .imperial ? "mph" : "km/h" }
+
+    /// "28.5 – 32 km/h" from a speed range in m/s, for activities where
+    /// speed, not pace, is the working number (cycling).
+    func speedRange(metersPerSecond lower: Double, _ upper: Double) -> String {
+        func number(_ mps: Double) -> String {
+            let value = mps * 3600 / metersPerUnit
+            let rounded = (value * 10).rounded() / 10
+            return rounded == rounded.rounded() ? String(format: "%.0f", rounded) : String(format: "%.1f", rounded)
+        }
+        return "\(number(min(lower, upper))) – \(number(max(lower, upper))) \(speedUnit)"
+    }
 }
