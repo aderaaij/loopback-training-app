@@ -28,6 +28,9 @@ struct LoopbackApp: App {
 
     private var domains: DataDomains { DataDomains(rawValue: domainsRaw).union(.required) }
 
+    /// Empty until the athlete picks or the account's choice is adopted.
+    @AppStorage(DisplayUnits.storageKey) private var unitsRaw: String = ""
+
     @Environment(\.scenePhase) private var scenePhase
 
     private let apiClient: WorkoutAPIClient
@@ -129,6 +132,8 @@ struct LoopbackApp: App {
                 // permission prompts never fire on the way to the login screen.
                 guard session.isAuthenticated else { return }
 
+                await UnitsSync.reconcile(with: apiClient)
+
                 await scheduleManager.requestAuthorization()
                 await scheduleManager.loadScheduledWorkouts()
                 await scheduleManager.autoSync()
@@ -146,6 +151,10 @@ struct LoopbackApp: App {
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
+                    Task {
+                        guard session.isAuthenticated else { return }
+                        await UnitsSync.reconcile(with: apiClient)
+                    }
                     Task {
                         await scheduleManager.loadScheduledWorkouts()
                         await scheduleManager.autoSync()
@@ -167,6 +176,13 @@ struct LoopbackApp: App {
             // narrows the coach's tools.
             .onChange(of: domainsRaw) { _, _ in
                 Task { await startHealthPipeline() }
+            }
+            // Units changed, in Settings or by adopting the account's choice.
+            // The second case sends the server its own value back, which it
+            // ignores; telling the two apart isn't worth the state.
+            .onChange(of: unitsRaw) { _, raw in
+                guard session.isAuthenticated, let units = DisplayUnits(rawValue: raw) else { return }
+                Task { await UnitsSync.push(units, with: apiClient) }
             }
         }
     }
