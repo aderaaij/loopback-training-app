@@ -16,6 +16,7 @@ struct ScheduledWorkoutDetailView: View {
 
     @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var changingPlans: MissedWorkoutInfo?
 
     var body: some View {
@@ -389,9 +390,17 @@ struct ScheduledWorkoutDetailView: View {
     }
 
     private func formatMeasurement<T: Dimension>(_ measurement: Measurement<T>) -> String {
+        // Distances authored in km or miles follow the unit preference;
+        // everything else is shown as written.
+        if let length = measurement as? Measurement<UnitLength> {
+            let preferred = units.preferred(length)
+            if preferred.unit != length.unit { return formatMeasurement(preferred) }
+        }
         let formatter = MeasurementFormatter()
         formatter.unitOptions = .providedUnit
-        formatter.numberFormatter.maximumFractionDigits = 1
+        // Distances get two decimals, like completed runs: at one, a mile
+        // figure is too coarse (1200 m would read 0.7 mi, not 0.75).
+        formatter.numberFormatter.maximumFractionDigits = measurement is Measurement<UnitLength> ? 2 : 1
         return formatter.string(from: measurement)
     }
 
@@ -434,13 +443,8 @@ struct ScheduledWorkoutDetailView: View {
     }
 
     private func formatPace(distance: Measurement<UnitLength>, time: Measurement<UnitDuration>) -> String {
-        let distanceKm = distance.converted(to: .kilometers).value
-        let timeSeconds = time.converted(to: .seconds).value
-        guard distanceKm > 0 else { return "--" }
-        let paceSecondsPerKm = timeSeconds / distanceKm
-        let minutes = Int(paceSecondsPerKm) / 60
-        let seconds = Int(paceSecondsPerKm) % 60
-        return "\(minutes):\(String(format: "%02d", seconds)) /km"
+        units.pace(duration: time.converted(to: .seconds).value,
+                   meters: distance.converted(to: .meters).value)
     }
 
     // MARK: - Computed Properties

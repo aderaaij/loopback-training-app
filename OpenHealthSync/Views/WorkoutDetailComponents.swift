@@ -351,6 +351,7 @@ struct LBHeartRateChart: View {
 
 struct LBSplitsList: View {
     let splits: [Split]
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
 
     private var paces: [Double] { splits.map(\.pace).filter { $0 > 0 } }
     private var fastest: Double { paces.min() ?? 0 }
@@ -414,8 +415,6 @@ struct LBSplitsList: View {
     }
 
     private func paceText(_ secPerKm: Double) -> String {
-        guard secPerKm > 0 else { return "--" }
-        let m = Int(secPerKm) / 60, s = Int(secPerKm) % 60
-        return "\(m):\(String(format: "%02d", s))"
+        units.paceNumber(secondsPerKm: secPerKm)
     }
 }

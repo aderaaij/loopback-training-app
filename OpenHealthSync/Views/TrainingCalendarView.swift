@@ -176,6 +176,7 @@ private struct DayDetailSection: View {
     var missedWorkoutDetector: MissedWorkoutDetector
 
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var feedbackWorkout: MissedWorkoutInfo?
 
     var body: some View {
@@ -504,10 +505,12 @@ private struct DayDetailSection: View {
     }
 
     private func formatDistance(_ meters: Double) -> String {
-        if meters >= 1000 {
-            return String(format: "%.2f km", meters / 1000)
+        // Sub-kilometer distances read better in meters, but only to someone
+        // who thinks in meters.
+        if units == .metric && meters < 1000 {
+            return "\(Int(meters)) m"
         }
-        return "\(Int(meters)) m"
+        return units.distance(meters: meters)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -539,10 +542,6 @@ private struct DayDetailSection: View {
     }
 
     private func formatPace(duration: TimeInterval, distance: Double) -> String {
-        guard distance > 0 else { return "--" }
-        let paceSecondsPerKm = duration / (distance / 1000)
-        let minutes = Int(paceSecondsPerKm) / 60
-        let seconds = Int(paceSecondsPerKm) % 60
-        return "\(minutes):\(String(format: "%02d", seconds)) /km"
+        units.pace(duration: duration, meters: distance)
     }
 }

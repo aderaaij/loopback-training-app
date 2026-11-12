@@ -2,7 +2,7 @@
 //  TrainingSettingsView.swift
 //  OpenHealthSync
 //
-//  Training preferences: preferred run time and week start.
+//  Training preferences: preferred run time, week start and display units.
 //
 
 import SwiftUI
@@ -10,6 +10,7 @@ import SwiftUI
 struct TrainingSettingsView: View {
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
     @AppStorage("weekStartsOnMonday") private var weekStartsOnMonday: Bool = true
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
 
     var body: some View {
         Form {
@@ -31,6 +32,18 @@ struct TrainingSettingsView: View {
                     Text("Monday").tag(true)
                     Text("Sunday").tag(false)
                 }
+            }
+
+            Section {
+                Picker("Distance and pace", selection: $units) {
+                    ForEach(DisplayUnits.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+            } header: {
+                Text("Units")
+            } footer: {
+                Text("Changes how distances and paces are shown in the app. Workouts on your watch and data on your server are unaffected.")
             }
         }
         .listRowBackground(LB.surface)

@@ -115,6 +115,7 @@ struct WorkoutListView: View {
 
 struct WorkoutRow: View {
     let summary: WorkoutSummary
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     var status: WorkoutExtractionStatus?
 
     var body: some View {
@@ -203,8 +204,7 @@ struct WorkoutRow: View {
     }
 
     private func formatDistance(_ meters: Double) -> String {
-        let km = meters / 1000
-        return String(format: "%.2f km", km)
+        units.distance(meters: meters)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -225,6 +225,7 @@ struct WorkoutDetailView: View {
     let summary: WorkoutSummary
     var workoutManager: WorkoutManager
 
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var detailed: DetailedWorkout?
     @State private var context: WorkoutContext?
     @State private var loading = true
@@ -412,13 +413,13 @@ struct WorkoutDetailView: View {
     private func statSpecs(_ d: DetailedWorkout) -> [StatSpec] {
         var specs: [StatSpec] = []
         if let dist = d.totalDistance, dist > 0 {
-            specs.append(StatSpec(label: "Distance", value: String(format: "%.2f", dist / 1000), unit: "km"))
+            specs.append(StatSpec(label: "Distance", value: units.distanceNumber(meters: dist), unit: units.distanceUnit))
         }
         specs.append(StatSpec(label: "Duration", value: formatDuration(d.duration)))
         if let dist = d.totalDistance, dist > 0 {
             specs.append(StatSpec(label: "Avg pace",
                                   value: paceValue(duration: d.duration, distance: dist),
-                                  unit: "/km", accent: true))
+                                  unit: units.paceUnit, accent: true))
         }
         if let hr = avgHR(d) {
             specs.append(StatSpec(label: "Avg HR", value: "\(hr)", unit: "bpm"))
@@ -468,13 +469,13 @@ struct WorkoutDetailView: View {
     private var summaryStatGrid: some View {
         LazyVGrid(columns: grid, spacing: 12) {
             if let distance = summary.distance, distance > 0 {
-                LBStatTile(label: "Distance", value: String(format: "%.2f", distance / 1000), unit: "km")
+                LBStatTile(label: "Distance", value: units.distanceNumber(meters: distance), unit: units.distanceUnit)
             }
             LBStatTile(label: "Duration", value: formatDuration(summary.duration))
             if let distance = summary.distance, distance > 0 {
                 LBStatTile(label: "Avg pace",
                            value: paceValue(duration: summary.duration, distance: distance),
-                           unit: "/km", accent: true)
+                           unit: units.paceUnit, accent: true)
             }
         }
     }
@@ -523,7 +524,7 @@ struct WorkoutDetailView: View {
 
     private func routeTrailing(_ d: DetailedWorkout) -> String {
         guard let dist = d.totalDistance, dist > 0 else { return "GPS" }
-        return String(format: "GPS · %.2f km", dist / 1000)
+        return "GPS · \(units.distance(meters: dist))"
     }
 
     private func hrTrailing(_ hr: [TimeSeries]) -> String {
@@ -538,8 +539,10 @@ struct WorkoutDetailView: View {
         let paces = splits.map(\.pace).filter { $0 > 0 }
         guard !paces.isEmpty else { return "" }
         let avg = paces.reduce(0, +) / Double(paces.count)
-        let m = Int(avg) / 60, s = Int(avg) % 60
-        return "avg \(m):\(String(format: "%02d", s))"
+        // The splits themselves stay 1 km long; only their pace converts, so
+        // say which pace this is when it isn't per km.
+        let suffix = units == .metric ? "" : " \(units.paceUnit)"
+        return "avg \(units.paceNumber(secondsPerKm: avg))\(suffix)"
     }
 
     private var extractionCard: some View {
@@ -646,10 +649,6 @@ struct WorkoutDetailView: View {
     }
 
     private func paceValue(duration: TimeInterval, distance: Double) -> String {
-        guard distance > 0 else { return "--" }
-        let paceSecondsPerKm = duration / (distance / 1000)
-        let minutes = Int(paceSecondsPerKm) / 60
-        let seconds = Int(paceSecondsPerKm) % 60
-        return "\(minutes):\(String(format: "%02d", seconds))"
+        units.paceNumber(duration: duration, meters: distance)
     }
 }

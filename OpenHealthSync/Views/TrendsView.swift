@@ -28,6 +28,7 @@ struct TrendsView: View {
     @State private var segment: Segment = .mileage
 
     @AppStorage(DataConsent.appStorageKey) private var domainsRaw: Int = DataDomains.required.rawValue
+    @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
 
     /// Intent gates the surface. An athlete who doesn't share nutrition has no
     /// Fuel tab at all — rather than one that's permanently empty and keeps
@@ -123,12 +124,12 @@ struct TrendsView: View {
     /// Distance per month for the last 12 months, oldest first. Months with
     /// no synced runs are absent from the response, so gaps are filled with
     /// zero here.
-    private var monthlyDistances: [(month: Date, km: Double)] {
+    private var monthlyDistances: [(month: Date, distance: Double)] {
         let calendar = Calendar.current
-        let kmByMonth: [Date: Double] = rows.reduce(into: [:]) { acc, row in
+        let byMonth: [Date: Double] = rows.reduce(into: [:]) { acc, row in
             guard let start = row.periodStart else { return }
             let month = calendar.date(from: calendar.dateComponents([.year, .month], from: start)) ?? start
-            acc[month, default: 0] += (row.totalDistance ?? 0) / 1000
+            acc[month, default: 0] += units.distanceValue(meters: row.totalDistance ?? 0)
         }
         guard let currentMonth = calendar.date(
             from: calendar.dateComponents([.year, .month], from: Date())
@@ -137,7 +138,7 @@ struct TrendsView: View {
             guard let month = calendar.date(byAdding: .month, value: -offset, to: currentMonth) else {
                 return nil
             }
-            return (month, kmByMonth[month] ?? 0)
+            return (month, byMonth[month] ?? 0)
         }
     }
 
@@ -172,7 +173,7 @@ struct TrendsView: View {
         VStack(alignment: .leading, spacing: 10) {
             LBSectionHeader(title: title)
             HStack(spacing: 10) {
-                LBTrendTile(value: formatKm(totals.distance / 1000), label: "km")
+                LBTrendTile(value: formatDistance(units.distanceValue(meters: totals.distance)), label: units.distanceUnit)
                 LBTrendTile(value: "\(totals.runs)", label: "Runs")
                 LBTrendTile(value: formatHours(totals.duration), label: "Time")
             }
@@ -193,21 +194,21 @@ struct TrendsView: View {
 
     private var monthlyBars: some View {
         let months = monthlyDistances
-        let maxKm = months.map(\.km).max() ?? 0
+        let maxDistance = months.map(\.distance).max() ?? 0
         let maxBarHeight: CGFloat = 96
 
         return HStack(alignment: .bottom, spacing: 6) {
             ForEach(months, id: \.month) { entry in
                 VStack(spacing: 6) {
-                    Text(entry.km > 0 ? "\(Int(entry.km.rounded()))" : " ")
+                    Text(entry.distance > 0 ? "\(Int(entry.distance.rounded()))" : " ")
                         .font(.lbMono(9))
                         .foregroundStyle(LB.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                     UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
-                        .fill(entry.km > 0 ? LB.accent : LB.trackEmpty)
-                        .frame(height: entry.km > 0
-                               ? max(6, maxBarHeight * CGFloat(entry.km) / CGFloat(max(maxKm, 1)))
+                        .fill(entry.distance > 0 ? LB.accent : LB.trackEmpty)
+                        .frame(height: entry.distance > 0
+                               ? max(6, maxBarHeight * CGFloat(entry.distance) / CGFloat(max(maxDistance, 1)))
                                : 3)
                     Text(Self.monthFormatter.string(from: entry.month).uppercased())
                         .font(.lbMono(9))
@@ -255,8 +256,8 @@ struct TrendsView: View {
 
     // MARK: - Formatting
 
-    private func formatKm(_ km: Double) -> String {
-        km >= 100 ? String(format: "%.0f", km) : String(format: "%.1f", km)
+    private func formatDistance(_ value: Double) -> String {
+        value >= 100 ? String(format: "%.0f", value) : String(format: "%.1f", value)
     }
 
     private func formatHours(_ seconds: Double) -> String {
