@@ -2,7 +2,7 @@
 
 A privacy-first training companion for iOS that connects Apple Health data to AI coaching. Manages the full workout lifecycle — plan creation, Apple Watch scheduling, execution tracking, and performance analysis — all through a self-hosted backend you control: the [Loopback Server](https://github.com/aderaaij/loopback-training-server).
 
-**[loopback.ardenlab.dev](https://loopback.ardenlab.dev/)** · [Privacy](https://loopback.ardenlab.dev/privacy/) · [Support](https://loopback.ardenlab.dev/support/)
+**[Join the beta on TestFlight](https://testflight.apple.com/join/fV73tucs)** · [loopback.ardenlab.dev](https://loopback.ardenlab.dev/) · [Privacy](https://loopback.ardenlab.dev/privacy/) · [Support](https://loopback.ardenlab.dev/support/)
 
 ## Features
 
@@ -59,7 +59,7 @@ Detects past-due incomplete workouts and collects structured feedback:
 ## Requirements
 
 - iOS 26+
-- Xcode 26+
+- Xcode 26+, only if you build from source. The [TestFlight beta](https://testflight.apple.com/join/fV73tucs) installs without it.
 - A self-hosted [Loopback Server](https://github.com/aderaaij/loopback-training-server) (the Training API)
 
 ## Server Setup
@@ -95,6 +95,8 @@ All endpoints require a per-user bearer token, which the app mints via `POST /ap
 The Training API includes an MCP server at `/mcp` that lets AI assistants (like Claude) create training plans, queue workouts, query performance data, read health metrics, and analyze missed workout patterns. See the [Loopback Server repository](https://github.com/aderaaij/loopback-training-server) for setup instructions.
 
 ## App Setup
+
+The quickest way in is the [TestFlight beta](https://testflight.apple.com/join/fV73tucs): install it, then sign in to your server. To build from source instead:
 
 ### 1. Clone the repository
 
