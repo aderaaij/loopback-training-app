@@ -43,7 +43,7 @@ struct TrainingSettingsView: View {
             } header: {
                 Text("Units")
             } footer: {
-                Text("Changes how distances and paces are shown in the app. Workouts on your watch and data on your server are unaffected.")
+                Text("How distances and paces are shown here and on your dashboard, and the units your coach uses. Workouts on your watch and data on your server are unaffected.")
             }
         }
         .listRowBackground(LB.surface)

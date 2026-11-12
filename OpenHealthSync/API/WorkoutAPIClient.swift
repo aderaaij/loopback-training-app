@@ -467,6 +467,23 @@ actor WorkoutAPIClient {
         try await perform("PUT", "api/me/data-consent", body: Self.encoder.encode(payload))
     }
 
+    // MARK: - Display Units
+
+    /// The units stored on the athlete's account, or nil when nobody has
+    /// chosen yet. The dashboard and the coach read the same value.
+    ///
+    /// Throws on a server that predates the endpoint (its catch-all answers
+    /// the GET with the dashboard's HTML, which doesn't decode); callers treat
+    /// that as "keep the local choice".
+    func fetchUnits() async throws -> DisplayUnits? {
+        let (data, _) = try await perform("GET", "api/me/units")
+        return try Self.decoder.decode(UnitsPayload.self, from: data).units.flatMap(DisplayUnits.init(rawValue:))
+    }
+
+    func sendUnits(_ units: DisplayUnits) async throws {
+        try await perform("PUT", "api/me/units", body: Self.encoder.encode(UnitsPayload(units: units.rawValue)))
+    }
+
     // MARK: - Health Metrics
 
     func sendHealthMetrics(_ payload: HealthMetricsBulkPayload) async throws {

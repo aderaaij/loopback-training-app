@@ -4,11 +4,13 @@
 //
 //  Display-unit preference (metric / imperial). Display only: HealthKit, the
 //  API and everything stored stay metric, and nothing is converted on the
-//  wire. Mirrors the dashboard's `format.ts`, but the choice is local to this
-//  device — the server doesn't store one.
+//  wire. Mirrors the dashboard's `format.ts`. The choice belongs to the
+//  account (`/api/me/units`, see `UnitsSync`), so the dashboard and the coach
+//  follow it too; `@AppStorage` holds this device's copy.
 //
 
 import Foundation
+import os
 
 enum DisplayUnits: String, CaseIterable, Identifiable, Sendable {
     case metric
@@ -129,5 +131,53 @@ enum DisplayUnits: String, CaseIterable, Identifiable, Sendable {
             return rounded == rounded.rounded() ? String(format: "%.0f", rounded) : String(format: "%.1f", rounded)
         }
         return "\(number(min(lower, upper))) – \(number(max(lower, upper))) \(speedUnit)"
+    }
+}
+
+/// Body of `GET` and `PUT /api/me/units`. `units` is null on the server until
+/// someone chooses; an unknown string from a newer server reads as unset.
+nonisolated struct UnitsPayload: Codable, Sendable {
+    let units: String?
+}
+
+/// Keeps this device's units in step with the account's.
+///
+/// The server wins once it holds a choice, so a change made in the dashboard
+/// or on another phone arrives here on the next launch or foreground. Until
+/// then this device offers its own, with one exception: a metric *default*
+/// is never offered. The server already reads "unset" as metric, so sending
+/// it would add nothing, and it would overwrite a miles choice still waiting
+/// in the athlete's browser from before the preference moved server-side.
+///
+/// Every failure is silent. A server that predates the endpoint, or no
+/// network, leaves the local choice exactly as it was.
+enum UnitsSync {
+    /// Whether the athlete has picked, as opposed to following the device.
+    private static var localChoice: DisplayUnits? {
+        UserDefaults.standard.string(forKey: DisplayUnits.storageKey).flatMap(DisplayUnits.init(rawValue:))
+    }
+
+    /// Launch and foreground: adopt the account's choice, or offer ours.
+    static func reconcile(with client: WorkoutAPIClient) async {
+        do {
+            if let remote = try await client.fetchUnits() {
+                if remote != localChoice {
+                    UserDefaults.standard.set(remote.rawValue, forKey: DisplayUnits.storageKey)
+                }
+            } else if let offer = localChoice ?? (DisplayUnits.deviceDefault == .imperial ? .imperial : nil) {
+                try await client.sendUnits(offer)
+            }
+        } catch {
+            AppLog.sync.info("Units sync skipped: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// The athlete changed the picker in Settings.
+    static func push(_ units: DisplayUnits, with client: WorkoutAPIClient) async {
+        do {
+            try await client.sendUnits(units)
+        } catch {
+            AppLog.sync.info("Units push failed: \(String(describing: error), privacy: .public)")
+        }
     }
 }
