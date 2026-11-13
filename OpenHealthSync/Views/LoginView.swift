@@ -188,7 +188,7 @@ struct LoginView: View {
                 // wrong-server / DB-down probe throws and is shown below; a
                 // version warning pauses for an explicit "Sign In Anyway".
                 if !acknowledged {
-                    let compat = try await session.probeServerHealth(serverURL: url)
+                    let (compat, _) = try await session.probeServerHealth(serverURL: url)
                     if compat.isWarning {
                         handshake = .warning(compat)
                         status = .idle

@@ -81,13 +81,16 @@ final class SessionStore {
     /// against the same dead address, so surface it now. A server that answers
     /// without a health payload (pre-0.1.0, non-JSON) degrades to `.unknown`
     /// so the caller can still try to sign in. Returns the compatibility
-    /// verdict; a warning is advisory, never fatal.
+    /// verdict; a warning is advisory, never fatal. Alongside it, reports the
+    /// base URL the probe effectively reached — an http:// address behind a
+    /// proxy that redirects to https is adopted as https, since URLSession
+    /// drops the Bearer header across that redirect.
     @discardableResult
-    func probeServerHealth(serverURL rawURL: String) async throws -> ServerCompatibility {
+    func probeServerHealth(serverURL rawURL: String) async throws -> (compatibility: ServerCompatibility, serverURL: URL) {
         let url = Self.normalizedURL(rawURL)
-        let health: ServerHealth
+        let result: (health: ServerHealth, baseURL: URL)
         do {
-            health = try await apiClient.fetchHealth(on: url)
+            result = try await apiClient.fetchHealth(on: url)
         } catch let error as URLError {
             // Unreachable — nothing was learned about the server, so the last
             // known version stays.
@@ -97,8 +100,9 @@ final class SessionStore {
             // server or a non-JSON response). Don't block on it — clear the
             // stale version and sign in without one.
             storeServerVersion(nil)
-            return .unknown
+            return (.unknown, url)
         }
+        let health = result.health
         guard health.isLoopbackServer else {
             throw WorkoutAPIError.notLoopbackServer(service: health.service)
         }
@@ -106,7 +110,7 @@ final class SessionStore {
             throw WorkoutAPIError.databaseUnavailable
         }
         storeServerVersion(health.semanticVersion)
-        return serverCompatibility
+        return (serverCompatibility, result.baseURL)
     }
 
     /// Silent version refresh for an established session (Settings → Account),
@@ -115,21 +119,24 @@ final class SessionStore {
     /// a successful Loopback answer; any failure keeps the last known version.
     func refreshServerHealth() async {
         guard isAuthenticated else { return }
-        guard let health = try? await apiClient.fetchHealth(),
-              health.isLoopbackServer else { return }
-        storeServerVersion(health.semanticVersion)
+        guard let result = try? await apiClient.fetchHealth(),
+              result.health.isLoopbackServer else { return }
+        storeServerVersion(result.health.semanticVersion)
     }
 
     func login(serverURL rawURL: String, username: String, password: String, deviceName: String) async throws {
         let url = Self.normalizedURL(rawURL)
-        let response = try await apiClient.login(
+        // Adopt the URL login effectively reached: if the server redirected
+        // http→https, persisting the https base is what keeps later
+        // authenticated requests signed in (the Bearer header survives).
+        let (response, effectiveURL) = try await apiClient.login(
             baseURL: url,
             username: username,
             password: password,
             deviceName: deviceName
         )
         await establish(
-            serverURL: url.absoluteString,
+            serverURL: effectiveURL.absoluteString,
             token: response.token,
             tokenId: response.tokenId,
             user: response.user
@@ -140,21 +147,22 @@ final class SessionStore {
     /// logged-in token). Verifies it before persisting; best-effort fetches the
     /// user for display.
     func applyManualToken(serverURL rawURL: String, token: String) async throws {
-        let url = Self.normalizedURL(rawURL)
-
         // Handshake first: reject a non-Loopback or DB-down address before
         // adopting the token, and record the server version. A warning here is
         // advisory (this path has no "anyway" step), so the verdict is ignored.
-        _ = try await probeServerHealth(serverURL: rawURL)
+        // Adopt the URL the probe effectively reached so an http:// address
+        // behind an http→https redirect is configured as https.
+        let (_, effectiveURL) = try await probeServerHealth(serverURL: rawURL)
+        let serverURL = effectiveURL.absoluteString
 
-        await configureClients(serverURL: url.absoluteString, token: token)
+        await configureClients(serverURL: serverURL, token: token)
 
         // Throws on an unreachable host or a bad token (401) without posting the
         // global unauthorized signal, so a failed attempt won't sign the user out.
         try await apiClient.checkConnection()
 
         let user = (try? await apiClient.fetchMe())?.user
-        await establish(serverURL: url.absoluteString, token: token, tokenId: nil, user: user)
+        await establish(serverURL: serverURL, token: token, tokenId: nil, user: user)
     }
 
     // MARK: - Sign out

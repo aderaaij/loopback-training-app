@@ -117,6 +117,34 @@ actor WorkoutAPIClient {
         on overrideURL: URL? = nil,
         authenticated: Bool = true
     ) async throws -> (data: Data, status: Int) {
+        let (data, status, _) = try await performReachingBase(
+            method, path,
+            query: query,
+            body: body,
+            accepting: extraOK,
+            signalsUnauthorized: signalsUnauthorized,
+            timeout: timeout,
+            on: overrideURL,
+            authenticated: authenticated
+        )
+        return (data, status)
+    }
+
+    /// `baseURL` in the result is the base the request effectively reached;
+    /// see `effectiveBaseURL(requested:response:)` for why that can differ
+    /// from the one passed in.
+    @discardableResult
+    private func performReachingBase(
+        _ method: String,
+        _ path: String,
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        accepting extraOK: Set<Int> = [],
+        signalsUnauthorized: Bool = true,
+        timeout: TimeInterval? = nil,
+        on overrideURL: URL? = nil,
+        authenticated: Bool = true
+    ) async throws -> (data: Data, status: Int, baseURL: URL) {
         func makeRequest(on base: URL) -> URLRequest {
             var url = base.appendingPathComponent(path)
             if !query.isEmpty {
@@ -157,6 +185,7 @@ actor WorkoutAPIClient {
             first = baseURL
             second = alternativeURL
         }
+        var usedBase = first
 
         let data: Data
         let response: URLResponse
@@ -167,6 +196,7 @@ actor WorkoutAPIClient {
                 let fallback = second!
                 AppLog.sync.warning("Request to \(first.absoluteString, privacy: .public) failed (\(error.localizedDescription, privacy: .public)); retrying on \(fallback.absoluteString, privacy: .public)")
                 (data, response) = try await Self.session.data(for: makeRequest(on: fallback))
+                usedBase = fallback
                 usedAlternative.toggle()
                 Self.prefersAlternative.withLock { $0 = usedAlternative }
                 AppLog.sync.info("Failover succeeded; preferring \(fallback.absoluteString, privacy: .public) until the network path changes")
@@ -189,7 +219,7 @@ actor WorkoutAPIClient {
             viaFallback: usedAlternative
         )
         if (200...299).contains(code) || extraOK.contains(code) {
-            return (data, code)
+            return (data, code, Self.effectiveBaseURL(requested: usedBase, response: http))
         }
         if code == 401, signalsUnauthorized {
             NotificationCenter.default.post(name: .trainingAPIUnauthorized, object: nil)
@@ -209,6 +239,29 @@ actor WorkoutAPIClient {
         default:
             return false
         }
+    }
+
+    /// The base URL a request effectively reached. A reverse proxy answers an
+    /// http:// base with a redirect to https (POST /api/auth/login → 308, GETs
+    /// → 301); URLSession follows it but drops `Authorization` when the scheme
+    /// changes, so later authenticated requests would hit https with no token
+    /// and 401. When the final response stayed on the same host but upgraded
+    /// http→https, report the base rebuilt as https (keeping its host and path
+    /// prefix, with the scheme and port coming from the redirect) so the
+    /// session can adopt it up front. A redirect to a different host is left
+    /// alone.
+    private nonisolated static func effectiveBaseURL(requested: URL, response: URLResponse) -> URL {
+        guard let http = response as? HTTPURLResponse,
+              let finalURL = http.url,
+              finalURL.host == requested.host,
+              requested.scheme == "http",
+              finalURL.scheme == "https",
+              var components = URLComponents(url: requested, resolvingAgainstBaseURL: false) else {
+            return requested
+        }
+        components.scheme = "https"
+        components.port = finalURL.port
+        return components.url ?? requested
     }
 
     /// Fire-and-forget hop to the main actor so publishing never delays a request.
@@ -306,28 +359,33 @@ actor WorkoutAPIClient {
     /// before login. `on:` targets the candidate URL being set up (no failover
     /// to the configured route). Any non-2xx throws — a server without the
     /// endpoint (pre-0.1.0) surfaces as an error the setup flow degrades on.
-    func fetchHealth(on baseURL: URL? = nil) async throws -> ServerHealth {
-        let (data, _) = try await perform(
+    /// Returns the health payload plus the base URL the probe effectively
+    /// reached (https when the proxy redirected http→https).
+    func fetchHealth(on baseURL: URL? = nil) async throws -> (health: ServerHealth, baseURL: URL) {
+        let (data, _, effectiveBase) = try await performReachingBase(
             "GET", "api/health",
             signalsUnauthorized: false,
             timeout: 15,
             on: baseURL,
             authenticated: false
         )
-        return try Self.decoder.decode(ServerHealth.self, from: data)
+        return (try Self.decoder.decode(ServerHealth.self, from: data), effectiveBase)
     }
 
     /// Exchanges username + password for a bearer token. Unauthenticated by
     /// design; maps auth-specific status codes to typed errors so the login
     /// UI can message them (a 401 here is a bad password, not a dead session).
-    func login(baseURL: URL, username: String, password: String, deviceName: String) async throws -> LoginResponse {
+    /// Returns the token response plus the base URL login effectively reached
+    /// (https when the proxy redirected http→https), so the caller can persist
+    /// the upgraded URL.
+    func login(baseURL: URL, username: String, password: String, deviceName: String) async throws -> (response: LoginResponse, baseURL: URL) {
         let body = try JSONSerialization.data(withJSONObject: [
             "username": username,
             "password": password,
             "deviceName": deviceName,
         ])
 
-        let (data, status) = try await perform(
+        let (data, status, effectiveBase) = try await performReachingBase(
             "POST", "api/auth/login",
             body: body,
             accepting: [401, 429],
@@ -339,7 +397,7 @@ actor WorkoutAPIClient {
         switch status {
         case 401: throw WorkoutAPIError.invalidCredentials
         case 429: throw WorkoutAPIError.rateLimited
-        default: return try Self.decoder.decode(LoginResponse.self, from: data)
+        default: return (try Self.decoder.decode(LoginResponse.self, from: data), effectiveBase)
         }
     }
 
