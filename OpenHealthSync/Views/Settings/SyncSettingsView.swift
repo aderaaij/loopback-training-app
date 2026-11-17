@@ -21,6 +21,7 @@ struct SyncSettingsView: View {
 
     @AppStorage(DataConsent.appStorageKey) private var domainsRaw: Int = DataDomains.required.rawValue
     @AppStorage("trainingAPIAlternativeURL") private var alternativeURLText: String = ""
+    @AppStorage(WorkoutHistoryWindow.storageKey) private var workoutHistory: WorkoutHistoryWindow = .standard
 
     private var domains: DataDomains { DataDomains(rawValue: domainsRaw).union(.required) }
 
@@ -56,6 +57,18 @@ struct SyncSettingsView: View {
                 Text("Shared with your coach")
             } footer: {
                 Text("Your coach can only see — and only reason about — the data you share here. Turning something off stops it syncing and removes its tools from the coach; what's already on your server stays until you delete it there.")
+            }
+
+            Section {
+                Picker("Workout history", selection: $workoutHistory) {
+                    ForEach(WorkoutHistoryWindow.allCases) { window in
+                        Text(window.label).tag(window)
+                    }
+                }
+            } header: {
+                Text("Workouts")
+            } footer: {
+                Text("How far back Loopback reads your workouts from Apple Health, for the list in the app and for your server. Choosing a longer period uploads the older workouts once; with years of runs that takes a while and is best done on Wi-Fi. Choosing a shorter one removes nothing from your server.")
             }
 
             if sharesAnyHealthData {

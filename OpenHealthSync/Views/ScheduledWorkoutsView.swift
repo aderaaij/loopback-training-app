@@ -20,7 +20,9 @@ struct TrainingTabView: View {
     @State private var viewMode: ViewMode = .timeline
     @State private var selectedDate: Date?
     @State private var feedbackWorkout: MissedWorkoutInfo?
-    @State private var pastWorkoutsLimit = 10
+    /// How many past workouts the Training tab lists before linking to
+    /// the full history screen.
+    private let pastWorkoutsLimit = 10
     @AppStorage("onboardingSeededGoal") private var onboardingSeededGoal = false
     @AppStorage("onboardingNudgeDismissed") private var onboardingNudgeDismissed = false
 
@@ -295,12 +297,15 @@ struct TrainingTabView: View {
                                 }
                             }
                             if pastWorkouts.count > pastWorkoutsLimit {
-                                Button {
-                                    pastWorkoutsLimit += 10
+                                // The rest live on their own screen, by
+                                // month and with filters: paging through
+                                // years of history here never got anywhere.
+                                NavigationLink {
+                                    WorkoutHistoryView(workoutManager: workoutManager)
                                 } label: {
-                                    Text("Show More (\(pastWorkouts.count - pastWorkoutsLimit) remaining)")
+                                    Text("All workouts (\(pastWorkouts.count))")
                                         .font(.lbBody(13, .medium))
-                                        .frame(maxWidth: .infinity)
+                                        .foregroundStyle(LB.accent)
                                 }
                             }
                         } header: {

@@ -56,9 +56,9 @@ class WorkoutManager {
             key: HKSampleSortIdentifierStartDate, ascending: false
         )
 
-        // Combine date filter (6 months) with optional activity type filter
+        // Combine the history window with the optional activity type filter
         let datePredicate = HKQuery.predicateForSamples(
-            withStart: Calendar.current.date(byAdding: .month, value: -6, to: Date()),
+            withStart: WorkoutHistoryWindow.current.startDate(),
             end: nil,
             options: .strictStartDate
         )
@@ -92,11 +92,7 @@ class WorkoutManager {
 
             Task { @MainActor [weak self] in
                 self?.workouts = summaries
-                for summary in summaries {
-                    if self?.hasSentWorkout(summary.id) == true {
-                        self?.extractionStatuses[summary.id] = .sent(Date())
-                    }
-                }
+                self?.markSentStatuses(for: summaries)
             }
         }
 
@@ -107,14 +103,14 @@ class WorkoutManager {
 
     /// Fetches recent workouts regardless of activity type filter.
     /// Used by the Training tab to show past workouts alongside scheduled plans.
-    /// Limited to last 6 months and capped at 200 results.
+    /// Covers the history window chosen in Settings → Sync.
     func fetchAllRecentWorkouts() {
         let workoutType = HKWorkoutType.workoutType()
         let sort = NSSortDescriptor(
             key: HKSampleSortIdentifierStartDate, ascending: false
         )
         let datePredicate = HKQuery.predicateForSamples(
-            withStart: Calendar.current.date(byAdding: .month, value: -6, to: Date()),
+            withStart: WorkoutHistoryWindow.current.startDate(),
             end: nil,
             options: .strictStartDate
         )
@@ -122,7 +118,7 @@ class WorkoutManager {
         let query = HKSampleQuery(
             sampleType: workoutType,
             predicate: datePredicate,
-            limit: 200,
+            limit: HKObjectQueryNoLimit,
             sortDescriptors: [sort]
         ) { [weak self] _, samples, _ in
             let summaries: [WorkoutSummary] = autoreleasepool {
@@ -142,11 +138,7 @@ class WorkoutManager {
 
             Task { @MainActor [weak self] in
                 self?.allWorkouts = summaries
-                for summary in summaries {
-                    if self?.hasSentWorkout(summary.id) == true {
-                        self?.extractionStatuses[summary.id] = .sent(Date())
-                    }
-                }
+                self?.markSentStatuses(for: summaries)
             }
         }
 
@@ -262,8 +254,9 @@ class WorkoutManager {
         await fetchAllRecentWorkoutsAsync()
 
         // Filter to only unsent, non-in-progress workouts
+        let sent = sentWorkoutIDs()
         let pending = allWorkouts.filter { summary in
-            !hasSentWorkout(summary.id) &&
+            !sent.contains(summary.id.uuidString) &&
             extractionStatuses[summary.id] != .extracting &&
             extractionStatuses[summary.id] != .sending
         }
@@ -318,7 +311,7 @@ class WorkoutManager {
                 key: HKSampleSortIdentifierStartDate, ascending: false
             )
             let datePredicate = HKQuery.predicateForSamples(
-                withStart: Calendar.current.date(byAdding: .month, value: -6, to: Date()),
+                withStart: WorkoutHistoryWindow.current.startDate(),
                 end: nil,
                 options: .strictStartDate
             )
@@ -352,11 +345,7 @@ class WorkoutManager {
 
                 Task { @MainActor [weak self] in
                     self?.workouts = summaries
-                    for summary in summaries {
-                        if self?.hasSentWorkout(summary.id) == true {
-                            self?.extractionStatuses[summary.id] = .sent(Date())
-                        }
-                    }
+                    self?.markSentStatuses(for: summaries)
                     continuation.resume()
                 }
             }
@@ -373,7 +362,7 @@ class WorkoutManager {
                 key: HKSampleSortIdentifierStartDate, ascending: false
             )
             let datePredicate = HKQuery.predicateForSamples(
-                withStart: Calendar.current.date(byAdding: .month, value: -6, to: Date()),
+                withStart: WorkoutHistoryWindow.current.startDate(),
                 end: nil,
                 options: .strictStartDate
             )
@@ -401,11 +390,7 @@ class WorkoutManager {
 
                 Task { @MainActor [weak self] in
                     self?.allWorkouts = summaries
-                    for summary in summaries {
-                        if self?.hasSentWorkout(summary.id) == true {
-                            self?.extractionStatuses[summary.id] = .sent(Date())
-                        }
-                    }
+                    self?.markSentStatuses(for: summaries)
                     continuation.resume()
                 }
             }
@@ -415,6 +400,20 @@ class WorkoutManager {
     }
 
     // MARK: - Sent Tracking
+
+    /// Every id marked as sent. Read once per pass: with a long history
+    /// window, asking UserDefaults per workout re-reads the whole list each
+    /// time.
+    private func sentWorkoutIDs() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: sentKey) ?? [])
+    }
+
+    private func markSentStatuses(for summaries: [WorkoutSummary]) {
+        let sent = sentWorkoutIDs()
+        for summary in summaries where sent.contains(summary.id.uuidString) {
+            extractionStatuses[summary.id] = .sent(Date())
+        }
+    }
 
     func hasSentWorkout(_ id: UUID) -> Bool {
         let sent = UserDefaults.standard.stringArray(forKey: sentKey) ?? []
@@ -438,7 +437,19 @@ class WorkoutManager {
         var keep: [HKWorkout] = []
 
         for workout in workouts {
-            if let existingIdx = keep.firstIndex(where: { overlapFraction($0, workout) > 0.9 }) {
+            // Callers pass workouts newest first, so anything kept that
+            // starts at or after this one's end cannot overlap it, and
+            // neither can whatever was kept before that. Stopping there
+            // keeps this linear when the history window is years long.
+            var existingIdx: Int?
+            for idx in keep.indices.reversed() {
+                if keep[idx].startDate >= workout.endDate { break }
+                if overlapFraction(keep[idx], workout) > 0.9 {
+                    existingIdx = idx
+                    break
+                }
+            }
+            if let existingIdx {
                 // Prefer the one with a more specific activity type
                 if workout.workoutActivityType != .other && keep[existingIdx].workoutActivityType == .other {
                     keep[existingIdx] = workout

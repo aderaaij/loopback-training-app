@@ -23,6 +23,7 @@ struct LoopbackApp: App {
 
     @AppStorage("preferredRunTime") private var preferredRunTime: String = PreferredRunTime.morning.rawValue
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
+    @AppStorage(WorkoutHistoryWindow.storageKey) private var workoutHistory: WorkoutHistoryWindow = .standard
     /// The athlete's intent. `migrateIfNeeded()` in `init` guarantees the key
     /// exists, so the default here is only a formality.
     @AppStorage(DataConsent.appStorageKey) private var domainsRaw: Int = DataDomains.required.rawValue
@@ -121,6 +122,13 @@ struct LoopbackApp: App {
             // Shown anew after every sign-in: whatever the store still holds
             // belongs to the previous account.
             .onAppear { shoeStore.reset() }
+            .onChange(of: workoutHistory) { _, _ in
+                // A longer window brings older workouts into view: list
+                // them and upload the ones the server hasn't had.
+                workoutManager.fetchAllRecentWorkouts()
+                workoutManager.fetchRecentWorkouts()
+                Task { await workoutManager.extractNewWorkouts() }
+            }
             // Any /api call returning 401 signals a dead session → sign out.
             .onReceive(NotificationCenter.default.publisher(for: .trainingAPIUnauthorized)) { _ in
                 session.handleUnauthorized()
