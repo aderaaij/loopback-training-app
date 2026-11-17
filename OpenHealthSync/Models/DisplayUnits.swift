@@ -57,6 +57,11 @@ enum DisplayUnits: String, CaseIterable, Identifiable, Sendable {
         meters / metersPerUnit
     }
 
+    /// km or miles → meters, for distances the user types in.
+    func meters(fromDistanceValue value: Double) -> Double {
+        value * metersPerUnit
+    }
+
     /// Kilometers → km or miles, for values the server authors in km.
     func distanceValue(km: Double) -> Double {
         distanceValue(meters: km * 1000)
