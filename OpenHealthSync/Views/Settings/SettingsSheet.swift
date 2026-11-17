@@ -59,6 +59,17 @@ struct SettingsSheet: View {
                     }
 
                     NavigationLink {
+                        ShoesView(serverVersion: session.serverVersion)
+                    } label: {
+                        PreferenceRow(
+                            systemImage: "shoe.2.fill",
+                            tint: LB.amber,
+                            title: "Shoes",
+                            subtitle: "Mileage & default pair"
+                        )
+                    }
+
+                    NavigationLink {
                         AdvancedSettingsView(onRemoveAllWorkouts: onRemoveAllWorkouts)
                     } label: {
                         PreferenceRow(

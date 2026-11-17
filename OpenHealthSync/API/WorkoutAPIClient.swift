@@ -448,6 +448,65 @@ actor WorkoutAPIClient {
         return try Self.decoder.decode(WorkoutContext.self, from: data)
     }
 
+    // MARK: - Shoes (server 0.1.19+)
+
+    func fetchShoes() async throws -> [Shoe] {
+        try await request("GET", "api/shoes")
+    }
+
+    func createShoe(_ draft: ShoeDraft) async throws -> Shoe {
+        try await request("POST", "api/shoes", body: Self.shoeBody(draft))
+    }
+
+    /// Replaces everything the athlete can edit on a pair.
+    func updateShoe(id: UUID, draft: ShoeDraft) async throws -> Shoe {
+        try await request("PATCH", "api/shoes/\(id.uuidString)", body: Self.shoeBody(draft))
+    }
+
+    /// Retires a pair or brings it back. Retiring also clears "default".
+    func updateShoe(id: UUID, retired: Bool) async throws -> Shoe {
+        try await request(
+            "PATCH", "api/shoes/\(id.uuidString)",
+            body: JSONSerialization.data(withJSONObject: ["retired": retired])
+        )
+    }
+
+    func deleteShoe(id: UUID) async throws {
+        try await perform("DELETE", "api/shoes/\(id.uuidString)")
+    }
+
+    /// The pair on a workout. Read from the workout without its samples; a
+    /// 404 (workout not on the server) returns nil.
+    func fetchWorkoutShoe(workoutId: UUID) async throws -> WorkoutShoe? {
+        let (data, status) = try await perform(
+            "GET", "api/workouts/\(workoutId.uuidString)",
+            query: [URLQueryItem(name: "include_samples", value: "false")],
+            accepting: [404]
+        )
+        if status == 404 { return nil }
+        return try Self.decoder.decode(WorkoutShoe.self, from: data)
+    }
+
+    /// Puts a pair on a workout; nil takes it off.
+    func setWorkoutShoe(workoutId: UUID, shoeId: UUID?) async throws {
+        let value: Any = shoeId?.uuidString ?? NSNull()
+        try await perform(
+            "PUT", "api/workouts/\(workoutId.uuidString)/shoe",
+            body: JSONSerialization.data(withJSONObject: ["shoeId": value])
+        )
+    }
+
+    /// A missing target has to go out as an explicit null, which Codable's
+    /// synthesized encoding would drop.
+    private static func shoeBody(_ draft: ShoeDraft) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "name": draft.name,
+            "startDistance": draft.startDistance,
+            "targetDistance": draft.targetDistance ?? NSNull(),
+            "isDefault": draft.isDefault,
+        ] as [String: Any])
+    }
+
     // MARK: - Workout Inventory Sync
 
     func syncInventory(_ inventory: [WorkoutInventoryItem]) async throws {

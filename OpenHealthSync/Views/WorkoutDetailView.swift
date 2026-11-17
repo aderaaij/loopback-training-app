@@ -228,6 +228,9 @@ struct WorkoutDetailView: View {
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var detailed: DetailedWorkout?
     @State private var context: WorkoutContext?
+    /// The pair on this workout; nil hides the Shoes card.
+    @State private var workoutShoe: WorkoutShoe?
+    @Environment(ShoeStore.self) private var shoeStore
     @State private var loading = true
 
     private var status: WorkoutExtractionStatus {
@@ -253,6 +256,10 @@ struct WorkoutDetailView: View {
                     planSection(context: context, item: item)
                 }
 
+                if let workoutShoe {
+                    WorkoutShoeSection(workoutId: summary.id, initial: workoutShoe)
+                }
+
                 extractionCard
             }
             .padding(18)
@@ -269,6 +276,11 @@ struct WorkoutDetailView: View {
             detailed = await detailedTask
             context = (try? await contextTask) ?? nil
             loading = false
+            workoutShoe = await WorkoutShoeSection.load(
+                workoutId: summary.id,
+                activityType: summary.activityType,
+                store: shoeStore
+            )
         }
     }
 

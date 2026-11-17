@@ -15,6 +15,7 @@ struct LoopbackApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var workoutManager: WorkoutManager
     @State private var scheduleManager: WorkoutScheduleManager
+    @State private var shoeStore: ShoeStore
     @State private var missedWorkoutDetector = MissedWorkoutDetector()
     @State private var notificationManager: NotificationManager
     @State private var backgroundSyncManager: BackgroundSyncManager
@@ -65,6 +66,7 @@ struct LoopbackApp: App {
         sm.notificationManager = nm
         _workoutManager = State(initialValue: wm)
         _scheduleManager = State(initialValue: sm)
+        _shoeStore = State(initialValue: ShoeStore(apiClient: client))
         _notificationManager = State(initialValue: nm)
         _backgroundSyncManager = State(initialValue: BackgroundSyncManager(
             workoutManager: wm,
@@ -115,6 +117,10 @@ struct LoopbackApp: App {
                 }
             )
             .environment(scheduleManager)
+            .environment(shoeStore)
+            // Shown anew after every sign-in: whatever the store still holds
+            // belongs to the previous account.
+            .onAppear { shoeStore.reset() }
             // Any /api call returning 401 signals a dead session → sign out.
             .onReceive(NotificationCenter.default.publisher(for: .trainingAPIUnauthorized)) { _ in
                 session.handleUnauthorized()
