@@ -140,6 +140,29 @@ class WorkoutScheduleManager {
         if didChange {
             scheduledDateMap = map
         }
+
+        didLoadScheduledWorkouts = true
+        await syncCalendar()
+    }
+
+    // MARK: - iOS Calendar
+
+    /// Whether each half of the schedule has been read this launch. Until it
+    /// has, an empty list means "not known yet", and syncing it would delete
+    /// that half's events from the iOS Calendar only to add them back.
+    private var didLoadScheduledWorkouts = false
+    private var didLoadAgenda = false
+
+    /// Mirrors the schedule into the iOS Calendar when the user has switched
+    /// that on (Settings → Training). Cheap when nothing changed. Strength
+    /// sessions come from the server; while it hasn't answered and nothing is
+    /// cached, the ones already in Calendar are left as they are.
+    func syncCalendar() async {
+        guard CalendarSync.isEnabled, didLoadScheduledWorkouts else { return }
+        await CalendarSync.shared.sync(
+            items: CalendarSyncItem.items(scheduled: scheduledWorkouts, entries: calendarEntries),
+            strengthKnown: didLoadAgenda
+        )
     }
 
     // MARK: - Cache-First Rendering
@@ -165,6 +188,7 @@ class WorkoutScheduleManager {
         }
         if let response = await apiClient.cachedScheduleCalendar() {
             calendarEntries = response.entries
+            didLoadAgenda = true
         }
         if let plans = await apiClient.cachedAllPlans() {
             allPlans = plans
@@ -282,10 +306,12 @@ class WorkoutScheduleManager {
                 to: Self.calendarDayFormatter.string(from: to)
             )
             calendarEntries = response.entries
+            didLoadAgenda = true
         } catch {
             // Best-effort: keep whatever agenda we already have.
             AppLog.sync.error("Failed to load schedule calendar: \(String(describing: error), privacy: .public)")
         }
+        await syncCalendar()
     }
 
     /// Fetches a plan's expanded cadence (dated sessions + conflict warnings)
@@ -329,23 +355,10 @@ class WorkoutScheduleManager {
     /// target them for edit/delete actions, even if they predate the queue system.
     func syncWorkoutInventory() async {
         let workouts = await WorkoutScheduler.shared.scheduledWorkouts
-        let inventory = workouts.map { scheduled -> WorkoutInventoryItem in
-            let name: String
-            switch scheduled.plan.workout {
-            case .custom(let custom):
-                name = custom.displayName ?? "Custom Workout"
-            case .goal(let goal):
-                name = "Goal: \(goal.activity.displayName)"
-            case .pacer(let pacer):
-                name = "Pacer: \(pacer.activity.displayName)"
-            case .swimBikeRun:
-                name = "Swim-Bike-Run"
-            @unknown default:
-                name = "Workout"
-            }
+        let inventory = workouts.map { scheduled in
             return WorkoutInventoryItem(
                 id: scheduled.plan.id,
-                displayName: name,
+                displayName: scheduled.plan.displayTitle,
                 date: scheduled.date,
                 complete: scheduled.complete
             )
