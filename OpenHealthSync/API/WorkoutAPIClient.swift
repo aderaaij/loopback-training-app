@@ -253,7 +253,8 @@ actor WorkoutAPIClient {
     private nonisolated static func effectiveBaseURL(requested: URL, response: URLResponse) -> URL {
         guard let http = response as? HTTPURLResponse,
               let finalURL = http.url,
-              finalURL.host == requested.host,
+              let finalHost = finalURL.host, let requestedHost = requested.host,
+              finalHost.caseInsensitiveCompare(requestedHost) == .orderedSame,
               requested.scheme == "http",
               finalURL.scheme == "https",
               var components = URLComponents(url: requested, resolvingAgainstBaseURL: false) else {

@@ -34,6 +34,10 @@ struct LoginView: View {
 
     @State private var status: FormStatus = .idle
     @State private var handshake: Handshake = .idle
+    /// The address the last handshake actually reached: https when the server
+    /// redirected an http:// address. Sign-in goes there, so the password is
+    /// never posted to the plain-http side of that redirect.
+    @State private var verifiedURL: String?
 
     enum FormStatus: Equatable {
         case idle
@@ -184,11 +188,16 @@ struct LoginView: View {
         status = .working
         Task { @MainActor in
             do {
+                // "Sign In Anyway" skips the handshake, so it reuses the
+                // address the first one reached.
+                var target = acknowledged ? (verifiedURL ?? url) : url
                 // Handshake before the first sign-in attempt (doc §1–2). A
                 // wrong-server / DB-down probe throws and is shown below; a
                 // version warning pauses for an explicit "Sign In Anyway".
                 if !acknowledged {
-                    let (compat, _) = try await session.probeServerHealth(serverURL: url)
+                    let (compat, reached) = try await session.probeServerHealth(serverURL: url)
+                    target = reached.absoluteString
+                    verifiedURL = target
                     if compat.isWarning {
                         handshake = .warning(compat)
                         status = .idle
@@ -197,7 +206,7 @@ struct LoginView: View {
                     handshake = session.serverVersion.map { .verified("Loopback server · v\($0)") } ?? .idle
                 }
                 try await session.login(
-                    serverURL: url,
+                    serverURL: target,
                     username: user,
                     password: password,
                     deviceName: device
@@ -229,6 +238,7 @@ struct LoginView: View {
     /// the next Sign In.
     private func resetHandshake() {
         handshake = .idle
+        verifiedURL = nil
         resetStatus()
     }
 
