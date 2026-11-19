@@ -23,6 +23,9 @@ import Foundation
 nonisolated struct WorkoutContext: Decodable, Sendable {
     let workoutId: String
     let planWorkoutId: String?
+    /// The athlete linked or unlinked this workout by hand. Absent on servers
+    /// before 0.1.20.
+    let planLinkManual: Bool?
     let queueItem: WorkoutContextQueueItem?
     let plan: WorkoutContextPlan?
     let feedback: WorkoutContextFeedback?
@@ -31,7 +34,20 @@ nonisolated struct WorkoutContext: Decodable, Sendable {
         case plan, feedback
         case workoutId = "workout_id"
         case planWorkoutId = "plan_workout_id"
+        case planLinkManual = "plan_link_manual"
         case queueItem = "queue_item"
+    }
+}
+
+/// A workout and the planned session it counts for, as the workout list and
+/// the upload response carry it. Everything else in those rows is ignored.
+nonisolated struct WorkoutPlanLink: Decodable, Sendable {
+    let id: UUID
+    let planWorkoutId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case planWorkoutId = "plan_workout_id"
     }
 }
 

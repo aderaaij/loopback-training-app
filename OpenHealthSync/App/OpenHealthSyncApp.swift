@@ -118,7 +118,13 @@ struct LoopbackApp: App {
                 }
             )
             .environment(scheduleManager)
+            .environment(workoutManager)
             .environment(shoeStore)
+            // A session that just got a workout is no longer missed, and one
+            // that lost its workout may be again.
+            .onChange(of: scheduleManager.sessionLinks) { _, _ in
+                Task { await detectAndNotify() }
+            }
             // Shown anew after every sign-in: whatever the store still holds
             // belongs to the previous account.
             .onAppear { shoeStore.reset() }

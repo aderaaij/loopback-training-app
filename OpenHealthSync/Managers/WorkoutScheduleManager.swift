@@ -43,7 +43,14 @@ enum SyncStep: Int, Equatable, CaseIterable {
 @MainActor
 @Observable
 class WorkoutScheduleManager {
-    var scheduledWorkouts: [ScheduledWorkoutPlan] = []
+    /// The watch's schedule, with one correction: a session the athlete
+    /// linked a workout to reads as complete. WorkoutKit only completes a
+    /// session that was started from the watch's own schedule.
+    private(set) var scheduledWorkouts: [ScheduledWorkoutPlan] = []
+    /// The schedule exactly as WorkoutKit reports it.
+    private var deviceScheduledWorkouts: [ScheduledWorkoutPlan] = []
+    /// Planned session → the workout that counts for it, from the server.
+    private(set) var sessionLinks: [UUID: UUID] = [:]
     var refreshState: RefreshState = .idle
     var authorizationState: WorkoutScheduler.AuthorizationState = .notDetermined
     var activePlan: TrainingPlan?
@@ -125,7 +132,8 @@ class WorkoutScheduleManager {
 
     func loadScheduledWorkouts() async {
         let current = await WorkoutScheduler.shared.scheduledWorkouts
-        scheduledWorkouts = current
+        deviceScheduledWorkouts = current
+        applySessionLinks()
 
         // Backfill the date map for any workouts not yet tracked (e.g. legacy workouts
         // scheduled before the date map existed).
@@ -190,6 +198,9 @@ class WorkoutScheduleManager {
             calendarEntries = response.entries
             didLoadAgenda = true
         }
+        if let links = await apiClient.cachedWorkoutPlanLinks() {
+            setSessionLinks(from: links)
+        }
         if let plans = await apiClient.cachedAllPlans() {
             allPlans = plans
         }
@@ -225,7 +236,80 @@ class WorkoutScheduleManager {
             AppLog.sync.error("Failed to load active plan: \(String(describing: error), privacy: .public)")
         }
 
+        await loadSessionLinks()
         await loadScheduleCalendar()
+    }
+
+    // MARK: - Linking Workouts to Sessions
+
+    /// The workout that counts for a planned session, if any.
+    func linkedWorkoutId(forSession id: UUID) -> UUID? {
+        sessionLinks[id]
+    }
+
+    func loadSessionLinks() async {
+        do {
+            setSessionLinks(from: try await apiClient.fetchWorkoutPlanLinks())
+        } catch {
+            AppLog.sync.error("Failed to load workout plan links: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func setSessionLinks(from links: [WorkoutPlanLink]) {
+        var map: [UUID: UUID] = [:]
+        // Newest first; the server keeps one workout per session, so a
+        // duplicate can only be a stale row and the newest wins.
+        for link in links {
+            if let session = link.planWorkoutId, map[session] == nil {
+                map[session] = link.id
+            }
+        }
+        guard map != sessionLinks else { return }
+        sessionLinks = map
+        applySessionLinks()
+    }
+
+    private func applySessionLinks() {
+        scheduledWorkouts = deviceScheduledWorkouts.map { scheduled in
+            guard !scheduled.complete, sessionLinks[scheduled.plan.id] != nil else { return scheduled }
+            var done = scheduled
+            done.complete = true
+            return done
+        }
+    }
+
+    /// Counts a recorded workout for a planned session, or with a nil session
+    /// stops counting it. The server decides; nothing changes here when it
+    /// can't be reached. A session that was still to come leaves the watch,
+    /// since it has now been done.
+    @discardableResult
+    func setPlanLink(workoutId: UUID, sessionId: UUID?) async throws -> WorkoutContext {
+        let context = try await apiClient.setWorkoutPlanLink(workoutId: workoutId, planWorkoutId: sessionId)
+
+        var links = sessionLinks.filter { $0.value != workoutId }
+        if let sessionId {
+            links[sessionId] = workoutId
+        }
+        sessionLinks = links
+
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        let stillToCome = deviceScheduledWorkouts.contains { scheduled in
+            scheduled.plan.id == sessionId
+                && !scheduled.complete
+                && (Calendar.current.date(from: scheduled.date) ?? .distantPast) >= startOfToday
+        }
+        if let sessionId, stillToCome {
+            // Reloads the schedule, which applies the new links.
+            if !(await removeWorkout(id: sessionId)) {
+                AppLog.scheduling.warning("Linked session \(sessionId, privacy: .public) but couldn't take it off the watch")
+                applySessionLinks()
+            }
+        } else {
+            applySessionLinks()
+        }
+
+        Task { await refreshAfterPlanChange() }
+        return context
     }
 
     // MARK: - Plan Completion (celebration flow)

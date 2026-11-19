@@ -177,12 +177,14 @@ class WorkoutManager {
             }
 
             extractionStatuses[workoutID] = .sending
-            try await apiClient.send(data: jsonData)
+            let stored = try await apiClient.send(data: jsonData)
 
             // If this HK workout fulfilled a prescribed plan workout, mark it completed.
             // Server stamps completed_at idempotently, so the inventory-sync safety net
             // won't clobber this accurate timestamp on a later call.
-            if let planId {
+            // Go by the link the server kept: on a re-send it ignores our match
+            // for a workout the athlete linked or unlinked by hand.
+            if let planId = stored.map(\.planWorkoutId) ?? planId {
                 try? await apiClient.markPlanWorkoutCompleted(id: planId)
                 // That may have been the plan's final queued run — the server
                 // recomputes `finishable` on every read, so refresh and offer

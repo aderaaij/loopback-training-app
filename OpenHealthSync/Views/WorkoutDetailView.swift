@@ -7,6 +7,7 @@
 
 import SwiftUI
 import HealthKit
+import os
 
 // MARK: - Workout List
 
@@ -231,7 +232,11 @@ struct WorkoutDetailView: View {
     /// The pair on this workout; nil hides the Shoes card.
     @State private var workoutShoe: WorkoutShoe?
     @Environment(ShoeStore.self) private var shoeStore
+    @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @State private var loading = true
+    @State private var pickingSession = false
+    @State private var isUnlinking = false
+    @State private var unlinkFailed = false
 
     private var status: WorkoutExtractionStatus {
         workoutManager.extractionStatuses[summary.id] ?? .notExtracted
@@ -254,6 +259,9 @@ struct WorkoutDetailView: View {
 
                 if let context, let item = context.queueItem {
                     planSection(context: context, item: item)
+                } else if context != nil {
+                    // On the server but not counted for any session.
+                    linkPrompt
                 }
 
                 if let workoutShoe {
@@ -267,6 +275,9 @@ struct WorkoutDetailView: View {
         .background(LB.bg)
         .navigationTitle(summary.activityName)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $pickingSession) {
+            SessionPickerSheet(workout: summary) { context = $0 }
+        }
         .task {
             // HealthKit detail and server plan-linkage load in parallel; the
             // context call 404s (→ nil) for workouts the server never saw,
@@ -313,8 +324,104 @@ struct WorkoutDetailView: View {
                         .font(.lbBody(12))
                         .foregroundStyle(LB.textSecondary)
                 }
+
+                if let line = substitutionLine(for: item) {
+                    Text(line)
+                        .font(.lbBody(12))
+                        .foregroundStyle(LB.textSecondary)
+                }
+
+                Rectangle().fill(LB.line).frame(height: 1)
+
+                HStack {
+                    Text(context.planLinkManual == true ? "Linked by you" : "Matched automatically")
+                        .font(.lbMono(11))
+                        .foregroundStyle(LB.textTertiary)
+                    Spacer()
+                    if isUnlinking {
+                        ProgressView().controlSize(.small).tint(LB.accent)
+                    } else {
+                        Menu {
+                            Button {
+                                pickingSession = true
+                            } label: {
+                                Label("Count for Another Session…", systemImage: "arrow.left.arrow.right")
+                            }
+                            Button(role: .destructive) {
+                                unlink()
+                            } label: {
+                                Label("Unlink", systemImage: "link.badge.minus")
+                            }
+                        } label: {
+                            Text("Change")
+                                .font(.lbBody(13, .semibold))
+                                .foregroundStyle(LB.accent)
+                        }
+                    }
+                }
+
+                if unlinkFailed {
+                    Text("Couldn't unlink. Try again once you're connected.")
+                        .font(.lbBody(12))
+                        .foregroundStyle(LB.amber)
+                }
             }
         }
+    }
+
+    /// Offered on a workout the server has but no session counts: the run
+    /// started without the planned session, done on another day, or swapped
+    /// for something else.
+    private var linkPrompt: some View {
+        Button {
+            pickingSession = true
+        } label: {
+            HStack(spacing: 13) {
+                Image(systemName: "link")
+                    .font(.system(size: 18))
+                    .frame(width: 32)
+                    .foregroundStyle(LB.accent)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Count for a planned session")
+                        .font(.lbBody(15, .semibold))
+                        .foregroundStyle(LB.textPrimary)
+                    Text("Not linked to your plan yet")
+                        .font(.lbBody(12))
+                        .foregroundStyle(LB.textTertiary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13))
+                    .foregroundStyle(LB.textMuted)
+            }
+            .padding(16)
+            .lbCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func unlink() {
+        isUnlinking = true
+        unlinkFailed = false
+        Task {
+            defer { isUnlinking = false }
+            do {
+                context = try await scheduleManager.setPlanLink(workoutId: summary.id, sessionId: nil)
+            } catch {
+                AppLog.sync.error("Failed to unlink workout \(summary.id, privacy: .public): \(String(describing: error), privacy: .public)")
+                unlinkFailed = true
+            }
+        }
+    }
+
+    /// "Done as a walk instead" when the workout isn't the kind of session
+    /// that was planned. It still counts; this just keeps the swap visible.
+    private func substitutionLine(for item: WorkoutContextQueueItem) -> String? {
+        guard let planned = item.activityType, planned != summary.activityType else { return nil }
+        return "Done as \(summary.activityName.lowercased()) instead of \(planned)"
     }
 
     /// "Skipped — 😴 Tired / low energy" from the missed-day check-in, when
@@ -341,6 +448,11 @@ struct WorkoutDetailView: View {
     private var scheduleLine: String? {
         guard let scheduled = parseServerDate(context?.queueItem?.scheduledDate) else { return nil }
         let planned = Self.plannedFormatter.string(from: scheduled)
+        guard Calendar.current.isDate(scheduled, inSameDayAs: summary.startDate) else {
+            // Linked across days: the weekday alone no longer says which.
+            let day = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
+            return "Planned \(scheduled.formatted(day)) · done \(summary.startDate.formatted(day))"
+        }
         let actual = summary.startDate.formatted(.dateTime.hour().minute())
         return "Planned \(planned) · ran \(actual)"
     }
