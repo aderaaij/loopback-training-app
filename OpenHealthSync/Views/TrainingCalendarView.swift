@@ -153,6 +153,15 @@ struct TrainingCalendarView: View {
         let oneHour: TimeInterval = 3600
         for plan in scheduledWorkouts where plan.complete {
             guard let scheduledDate = calendar.date(from: plan.date) else { continue }
+            if let linked = scheduleManager.linkedWorkoutId(forSession: plan.plan.id) {
+                // The server knows which workout counts for this session, so
+                // no guessing. One done on another day keeps its own row
+                // there; the session's row points at it.
+                if linked == summary.id, calendar.isDate(summary.startDate, inSameDayAs: scheduledDate) {
+                    return true
+                }
+                continue
+            }
             let timeDiff = abs(summary.startDate.timeIntervalSince(scheduledDate))
             if timeDiff <= oneHour {
                 return true
@@ -176,6 +185,7 @@ private struct DayDetailSection: View {
     var missedWorkoutDetector: MissedWorkoutDetector
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var feedbackWorkout: MissedWorkoutInfo?
 
@@ -264,6 +274,11 @@ private struct DayDetailSection: View {
     /// Find the matching HKWorkout summary for a completed plan workout.
     private func matchedWorkout(for plan: ScheduledWorkoutPlan) -> WorkoutSummary? {
         guard plan.complete else { return nil }
+        // The server's link is exact, and the only way to find a workout
+        // done on another day.
+        if let linked = scheduleManager.linkedWorkoutId(forSession: plan.plan.id) {
+            return workoutManager.allWorkouts.first { $0.id == linked }
+        }
         guard let scheduledDate = Calendar.current.date(from: plan.date) else { return nil }
         let oneHour: TimeInterval = 3600
 
@@ -335,6 +350,7 @@ private struct DayDetailSection: View {
                             ScheduledWorkoutRow(scheduled: plan)
                             if let summary = matched {
                                 completedWorkoutMetrics(summary)
+                                doneOnAnotherDayHint(summary, plan: plan)
                             } else {
                                 workoutStructureHint(plan)
                             }
@@ -502,6 +518,19 @@ private struct DayDetailSection: View {
             }
         }
         .padding(.leading, 40)
+    }
+
+    /// "Done Wed 18 Nov" under a session whose workout was linked from
+    /// another day.
+    @ViewBuilder
+    private func doneOnAnotherDayHint(_ summary: WorkoutSummary, plan: ScheduledWorkoutPlan) -> some View {
+        if let scheduledDate = Calendar.current.date(from: plan.date),
+           !Calendar.current.isDate(summary.startDate, inSameDayAs: scheduledDate) {
+            Text("Done \(summary.startDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 40)
+        }
     }
 
     private func formatDistance(_ meters: Double) -> String {

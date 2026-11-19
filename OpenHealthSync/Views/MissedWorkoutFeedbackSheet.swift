@@ -67,6 +67,7 @@ struct MissedWorkoutFeedbackSheet: View {
     @State private var selectedReason: MissedWorkoutReason?
     @State private var reasonNote = ""
     @State private var showReschedulePicker = false
+    @State private var showWorkoutPicker = false
     @State private var showAdjustConfirmation = false
     /// A change is on its way to the server; the actions are locked meanwhile.
     @State private var isSaving = false
@@ -82,6 +83,18 @@ struct MissedWorkoutFeedbackSheet: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 headerSection
+
+                // Done after all: no reason to give, so it sits above them.
+                actionButton(
+                    title: workout.isUpcoming ? "I already did this" : "I did this",
+                    subtitle: "Count a workout you recorded for it",
+                    icon: "link",
+                    style: .secondary
+                ) {
+                    showWorkoutPicker = true
+                }
+                .disabled(isSaving)
+                .padding(.horizontal)
 
                 // Reason picker
                 reasonSection
@@ -128,6 +141,11 @@ struct MissedWorkoutFeedbackSheet: View {
                     move(to: newDate, skipping: skipping)
                 }
             )
+        }
+        .sheet(isPresented: $showWorkoutPicker) {
+            WorkoutPickerSheet(session: workout) {
+                onComplete(workout)
+            }
         }
         .alert(
             "Moved, but not everything",

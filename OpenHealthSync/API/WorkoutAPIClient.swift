@@ -307,6 +307,7 @@ actor WorkoutAPIClient {
         static let activePlans = "plans-active"
         static let allPlans = "plans-all"
         static let scheduleCalendar = "schedule-calendar"
+        static let workoutPlanLinks = "workout-plan-links"
         static func planWorkouts(_ planId: UUID) -> String { "plan-workouts-\(planId.uuidString)" }
     }
 
@@ -337,6 +338,7 @@ actor WorkoutAPIClient {
     func cachedActivePlans() -> [TrainingPlan]? { cachedPlans(for: CacheKey.activePlans) }
     func cachedAllPlans() -> [TrainingPlan]? { cachedPlans(for: CacheKey.allPlans) }
     func cachedScheduleCalendar() -> CalendarResponse? { cached(CacheKey.scheduleCalendar) }
+    func cachedWorkoutPlanLinks() -> [WorkoutPlanLink]? { cached(CacheKey.workoutPlanLinks) }
     func cachedPlanWorkouts(planId: UUID) -> [PlanWorkout]? { cached(CacheKey.planWorkouts(planId)) }
 
     private func cachedPlans(for key: String) -> [TrainingPlan]? {
@@ -419,8 +421,13 @@ actor WorkoutAPIClient {
 
     // MARK: - Workout Upload
 
-    func send(data: Data) async throws {
-        try await perform("POST", "api/workouts", body: data)
+    /// Uploads a workout and returns it as the server stored it, or nil when
+    /// the response can't be read. The stored plan link can differ from the
+    /// one sent: a link the athlete set by hand outlives a re-upload.
+    @discardableResult
+    func send(data: Data) async throws -> WorkoutPlanLink? {
+        let (response, _) = try await perform("POST", "api/workouts", body: data)
+        return try? Self.decoder.decode(WorkoutPlanLink.self, from: response)
     }
 
     // MARK: - Workout History (server-side aggregates & linkage)
@@ -446,6 +453,29 @@ actor WorkoutAPIClient {
         let (data, status) = try await perform("GET", "api/workouts/\(id.uuidString)/context", accepting: [404])
         if status == 404 { return nil }
         return try Self.decoder.decode(WorkoutContext.self, from: data)
+    }
+
+    // MARK: - Plan Links
+
+    /// Which planned session each recent workout counts for, newest first.
+    /// Read from the workout list, which carries no samples, so it is small.
+    func fetchWorkoutPlanLinks() async throws -> [WorkoutPlanLink] {
+        try await request(
+            "GET", "api/workouts",
+            query: [URLQueryItem(name: "limit", value: "200")],
+            cacheKey: CacheKey.workoutPlanLinks
+        )
+    }
+
+    /// Counts a workout for a planned session; nil unlinks it. Returns the
+    /// workout's new context. Needs server 0.1.20 or later: an older one
+    /// answers 404 or 405.
+    func setWorkoutPlanLink(workoutId: UUID, planWorkoutId: UUID?) async throws -> WorkoutContext {
+        let value: Any = planWorkoutId?.uuidString ?? NSNull()
+        return try await request(
+            "PUT", "api/workouts/\(workoutId.uuidString)/plan-link",
+            body: JSONSerialization.data(withJSONObject: ["planWorkoutId": value])
+        )
     }
 
     // MARK: - Shoes (server 0.1.19+)
