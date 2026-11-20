@@ -15,7 +15,10 @@ struct PlanOverviewCard: View {
     let scheduledWorkouts: [ScheduledWorkoutPlan]
 
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
-    @State private var selectedPhase: PlanPhase?
+    /// Position in `metadata.phases`, not the phase itself: a plan repeats
+    /// phase names ("Recovery" after each race), so a name can't say which
+    /// one was tapped.
+    @State private var selectedPhaseIndex: Int?
 
     private var completedCount: Int {
         let planWorkoutIds = Set(planWorkouts.map { $0.id })
@@ -60,8 +63,9 @@ struct PlanOverviewCard: View {
                     .padding(.top, 12)
             }
 
-            if let phase = selectedPhase {
-                phaseDetail(phase)
+            if let index = selectedPhaseIndex,
+               let phases = plan.metadata?.phases, phases.indices.contains(index) {
+                phaseDetail(phases[index])
             }
         }
         .padding(20)
@@ -163,14 +167,14 @@ struct PlanOverviewCard: View {
         let currentWeek = plan.currentWeek ?? -1
 
         FlowLayout(spacing: 7) {
-            ForEach(phases) { phase in
+            ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
                 let isCurrent = phase.weeks.contains(currentWeek)
-                let isSelected = selectedPhase?.name == phase.name
+                let isSelected = selectedPhaseIndex == index
                 let highlight = isCurrent || isSelected
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        selectedPhase = isSelected ? nil : phase
+                        selectedPhaseIndex = isSelected ? nil : index
                     }
                 } label: {
                     Text(phase.name)

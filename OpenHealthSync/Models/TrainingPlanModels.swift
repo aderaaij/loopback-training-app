@@ -305,13 +305,11 @@ nonisolated enum PlanGoalTarget: Codable, Sendable {
     }
 }
 
-nonisolated struct PlanPhase: Codable, Sendable, Identifiable {
+nonisolated struct PlanPhase: Codable, Sendable {
     let name: String
     let weeks: [Int]
     let volumeTargetKm: Double?
     let notes: String?
-
-    var id: String { name }
 
     enum CodingKeys: String, CodingKey {
         case name, weeks, notes
