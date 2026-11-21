@@ -51,6 +51,8 @@ class WorkoutScheduleManager {
     private var deviceScheduledWorkouts: [ScheduledWorkoutPlan] = []
     /// Planned session → the workout that counts for it, from the server.
     private(set) var sessionLinks: [UUID: UUID] = [:]
+    /// Whether the links were asked for this launch, successfully or not.
+    private(set) var didLoadSessionLinks = false
     var refreshState: RefreshState = .idle
     var authorizationState: WorkoutScheduler.AuthorizationState = .notDetermined
     var activePlan: TrainingPlan?
@@ -162,13 +164,20 @@ class WorkoutScheduleManager {
     private var didLoadAgenda = false
 
     /// Mirrors the schedule into the iOS Calendar when the user has switched
-    /// that on (Settings → Training). Cheap when nothing changed. Strength
+    /// that on (Settings → Training). Cheap when nothing changed. Sessions
+    /// already done are included, from the watch and from the active plan, so
+    /// one that left the watch or predates the switch still gets its entry.
+    /// Strength
     /// sessions come from the server; while it hasn't answered and nothing is
     /// cached, the ones already in Calendar are left as they are.
     func syncCalendar() async {
         guard CalendarSync.isEnabled, didLoadScheduledWorkouts else { return }
         await CalendarSync.shared.sync(
-            items: CalendarSyncItem.items(scheduled: scheduledWorkouts, entries: calendarEntries),
+            items: CalendarSyncItem.items(
+                scheduled: scheduledWorkouts,
+                entries: calendarEntries,
+                planWorkouts: planWorkouts
+            ),
             strengthKnown: didLoadAgenda
         )
     }
@@ -247,12 +256,23 @@ class WorkoutScheduleManager {
         sessionLinks[id]
     }
 
+    /// Makes the links known before anything judges a session missed: the
+    /// last ones the server gave (also offline), then this launch's. Without
+    /// them a session counted by hand looks incomplete.
+    func ensureSessionLinks() async {
+        await restoreFromCache()
+        if !didLoadSessionLinks {
+            await loadSessionLinks()
+        }
+    }
+
     func loadSessionLinks() async {
         do {
             setSessionLinks(from: try await apiClient.fetchWorkoutPlanLinks())
         } catch {
             AppLog.sync.error("Failed to load workout plan links: \(String(describing: error), privacy: .public)")
         }
+        didLoadSessionLinks = true
     }
 
     private func setSessionLinks(from links: [WorkoutPlanLink]) {
@@ -280,8 +300,10 @@ class WorkoutScheduleManager {
 
     /// Counts a recorded workout for a planned session, or with a nil session
     /// stops counting it. The server decides; nothing changes here when it
-    /// can't be reached. A session that was still to come leaves the watch,
-    /// since it has now been done.
+    /// can't be reached. A session planned for a later day leaves the watch,
+    /// since it has now been done. One planned for today stays and shows as
+    /// complete, like a past one: taking it off would also take its row out
+    /// of the calendar and its event out of iOS Calendar.
     @discardableResult
     func setPlanLink(workoutId: UUID, sessionId: UUID?) async throws -> WorkoutContext {
         let context = try await apiClient.setWorkoutPlanLink(workoutId: workoutId, planWorkoutId: sessionId)
@@ -292,13 +314,15 @@ class WorkoutScheduleManager {
         }
         sessionLinks = links
 
-        let startOfToday = Calendar.current.startOfDay(for: Date())
-        let stillToCome = deviceScheduledWorkouts.contains { scheduled in
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday
+        let onLaterDay = deviceScheduledWorkouts.contains { scheduled in
             scheduled.plan.id == sessionId
                 && !scheduled.complete
-                && (Calendar.current.date(from: scheduled.date) ?? .distantPast) >= startOfToday
+                && (calendar.date(from: scheduled.date) ?? .distantPast) >= startOfTomorrow
         }
-        if let sessionId, stillToCome {
+        if let sessionId, onLaterDay {
             // Reloads the schedule, which applies the new links.
             if !(await removeWorkout(id: sessionId)) {
                 AppLog.scheduling.warning("Linked session \(sessionId, privacy: .public) but couldn't take it off the watch")

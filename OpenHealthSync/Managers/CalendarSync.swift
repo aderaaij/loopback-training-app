@@ -38,11 +38,15 @@ extension CalendarSyncItem {
     nonisolated static let strengthKeyPrefix = "strength-"
 
     /// Everything from today on: runs as scheduled on the watch, plus the
-    /// strength sessions from the server's agenda. Earlier days are never
-    /// produced, so what already happened stays in Calendar as it was.
+    /// strength sessions from the server's agenda. Of earlier days only the
+    /// sessions that were done: those still on the watch as complete, and the
+    /// plan's completed sessions, which covers one that is no longer on the
+    /// watch. A missed or skipped session is never produced, so whatever
+    /// Calendar holds for it stays as it was.
     static func items(
         scheduled: [ScheduledWorkoutPlan],
         entries: [CalendarEntry],
+        planWorkouts: [PlanWorkout] = [],
         now: Date = Date()
     ) -> [CalendarSyncItem] {
         let calendar = Calendar.current
@@ -50,7 +54,7 @@ extension CalendarSyncItem {
         var items: [CalendarSyncItem] = []
 
         for workout in scheduled {
-            guard let start = calendar.date(from: workout.date), start >= today else { continue }
+            guard let start = calendar.date(from: workout.date), start >= today || workout.complete else { continue }
             // A run without a time of day (or at midnight, which is how
             // "no time" arrives from the server) is an all-day entry.
             let hasTime = (workout.date.hour ?? 0) != 0 || (workout.date.minute ?? 0) != 0
@@ -60,6 +64,26 @@ extension CalendarSyncItem {
                 title: workout.plan.displayTitle,
                 start: start,
                 end: hasTime ? start.addingTimeInterval(length) : start,
+                isAllDay: !hasTime,
+                notes: nil
+            ))
+        }
+
+        // The watch's own entry wins: it has the workout's steps, and with
+        // them a length.
+        var known = Set(items.map(\.key))
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        for session in planWorkouts where session.status == "completed" {
+            guard let start = session.scheduledDate, start < tomorrow else { continue }
+            let key = "\(runKeyPrefix)\(session.id.uuidString)"
+            guard known.insert(key).inserted else { continue }
+            let time = calendar.dateComponents([.hour, .minute], from: start)
+            let hasTime = (time.hour ?? 0) != 0 || (time.minute ?? 0) != 0
+            items.append(CalendarSyncItem(
+                key: key,
+                title: session.title,
+                start: start,
+                end: hasTime ? start.addingTimeInterval(defaultRunLength) : start,
                 isAllDay: !hasTime,
                 notes: nil
             ))
@@ -130,6 +154,8 @@ actor CalendarSync {
     private static let calendarIdKey = "calendarSyncCalendarID"
     private static let calendarTitle = "Loopback"
     private static let urlScheme = "loopbacktraining"
+    /// Days before the earliest done session to search for existing entries.
+    private static let movedSessionSlack = 60
 
     private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Loopback", category: "calendar")
 
@@ -158,6 +184,8 @@ actor CalendarSync {
 
     /// Makes the Loopback calendar match `items` from today on: adds what is
     /// missing, updates what moved or was renamed, removes what is gone.
+    /// Items before today are sessions that were done: those are added or
+    /// corrected, and nothing in the past is ever removed.
     /// With `strengthKnown` false the strength sessions already in Calendar
     /// are kept untouched, whatever `items` says about them.
     func sync(items: [CalendarSyncItem], strengthKnown: Bool) {
@@ -204,6 +232,34 @@ actor CalendarSync {
             for event in existing.values {
                 try store.remove(event, span: .thisEvent, commit: false)
                 changed = true
+            }
+
+            let done = items.filter { $0.start < today }
+            if let earliest = done.map(\.start).min(),
+               // Looked for well before the earliest, so a session whose
+               // entry sits on the day it was first planned for is found
+               // rather than added a second time.
+               let from = Calendar.current.date(byAdding: .day, value: -Self.movedSessionSlack, to: earliest) {
+                var past: [String: EKEvent] = [:]
+                for event in ownEvents(in: calendar, store: store, from: from, to: today)
+                where event.event.startDate < today && past[event.key] == nil {
+                    past[event.key] = event.event
+                }
+                for item in done {
+                    if let event = past[item.key] {
+                        if Self.apply(item, to: event) {
+                            try store.save(event, span: .thisEvent, commit: false)
+                            changed = true
+                        }
+                    } else {
+                        let event = EKEvent(eventStore: store)
+                        event.calendar = calendar
+                        event.url = Self.url(forKey: item.key)
+                        Self.apply(item, to: event)
+                        try store.save(event, span: .thisEvent, commit: false)
+                        changed = true
+                    }
+                }
             }
 
             if changed { try store.commit() }
