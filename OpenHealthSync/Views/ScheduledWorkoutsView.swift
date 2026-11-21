@@ -355,6 +355,9 @@ struct TrainingTabView: View {
         .task {
             await scheduleManager.loadScheduledWorkouts()
             workoutManager.fetchAllRecentWorkouts()
+            // A session counted by hand is only complete once its link is
+            // known; checking before that reports it as missed.
+            await scheduleManager.ensureSessionLinks()
             missedWorkoutDetector.checkForMissedWorkouts(
                 scheduledWorkouts: scheduleManager.scheduledWorkouts,
                 modelContext: modelContext
