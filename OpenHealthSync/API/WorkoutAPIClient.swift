@@ -517,7 +517,20 @@ actor WorkoutAPIClient {
         return try Self.decoder.decode(WorkoutShoe.self, from: data)
     }
 
-    /// Puts a pair on a workout; nil takes it off.
+    /// Runs started since `date`, each with its pair and whether it was checked.
+    func fetchRunShoeStates(since date: Date) async throws -> [RunShoeState] {
+        try await request(
+            "GET", "api/workouts",
+            query: [
+                URLQueryItem(name: "activity_type", value: "running"),
+                URLQueryItem(name: "start_after", value: ISO8601DateFormatter().string(from: date)),
+                URLQueryItem(name: "limit", value: "100"),
+            ]
+        )
+    }
+
+    /// Puts a pair on a workout; nil takes it off. Either way the server
+    /// counts the workout's pair as checked from then on.
     func setWorkoutShoe(workoutId: UUID, shoeId: UUID?) async throws {
         let value: Any = shoeId?.uuidString ?? NSNull()
         try await perform(

@@ -376,6 +376,7 @@ struct WorkoutShoeSection: View {
     @State private var selectedId: UUID?
     @State private var didSeed = false
     @State private var failed = false
+    @State private var isConfirming = false
 
     /// The workout's pair, or nil when there is nothing to show: not a
     /// foot-based activity, no pairs added yet, the workout isn't on the
@@ -417,6 +418,9 @@ struct WorkoutShoeSection: View {
                                 .font(.lbMono(11))
                                 .foregroundStyle(LB.textTertiary)
                         }
+                        if store.needsCheck(workoutId: workoutId) {
+                            checkPrompt
+                        }
                         if failed {
                             Text("Couldn't change the pair. Try again.")
                                 .font(.lbBody(12))
@@ -430,6 +434,48 @@ struct WorkoutShoeSection: View {
             guard !didSeed else { return }
             didSeed = true
             selectedId = initial.shoeId
+        }
+    }
+
+    /// Shown while the run still has the pair it got automatically.
+    private var checkPrompt: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(selectedId == nil
+                 ? "No pair on this run yet. Which one did you wear?"
+                 : "Added automatically. Is this the pair you wore?")
+                .font(.lbBody(12))
+                .foregroundStyle(LB.textSecondary)
+
+            Button {
+                confirm()
+            } label: {
+                Text(selectedId == nil ? "None of these" : "Yes, this pair")
+                    .font(.lbBody(13, .semibold))
+                    .foregroundStyle(LB.accent)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                            .fill(LB.accentTint())
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(isConfirming)
+        }
+        .padding(.top, 2)
+    }
+
+    /// Keeps the pair as it is and records that the athlete looked at it.
+    private func confirm() {
+        isConfirming = true
+        failed = false
+        Task {
+            do {
+                try await store.assign(shoeId: selectedId, toWorkout: workoutId)
+            } catch {
+                failed = true
+            }
+            isConfirming = false
         }
     }
 

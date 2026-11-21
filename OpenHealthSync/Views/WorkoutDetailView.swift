@@ -117,6 +117,7 @@ struct WorkoutListView: View {
 struct WorkoutRow: View {
     let summary: WorkoutSummary
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
+    @Environment(ShoeStore.self) private var shoeStore
     var status: WorkoutExtractionStatus?
 
     var body: some View {
@@ -143,6 +144,12 @@ struct WorkoutRow: View {
                 }
                 .font(.lbMono(11))
                 .foregroundStyle(LB.textTertiary)
+
+                if shoeStore.needsCheck(workoutId: summary.id) {
+                    Label("Check shoes", systemImage: "shoe.2.fill")
+                        .font(.lbMono(11))
+                        .foregroundStyle(LB.accent)
+                }
             }
 
             Spacer()
