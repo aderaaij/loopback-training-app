@@ -55,6 +55,22 @@ nonisolated struct ShoeDraft: Sendable, Equatable {
     var isDefault: Bool
 }
 
+/// A recent run as the workout list returns it, reduced to its pair and
+/// whether anyone has checked that pair (server 0.1.21+).
+nonisolated struct RunShoeState: Decodable, Sendable {
+    let id: UUID
+    let shoeId: UUID?
+    /// False while the pair is still the one assigned automatically; nil
+    /// from a server that doesn't track it.
+    let isConfirmed: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case shoeId = "shoe_id"
+        case isConfirmed = "shoe_confirmed"
+    }
+}
+
 /// The pair on one workout, read from the workout itself.
 nonisolated struct WorkoutShoe: Decodable, Sendable {
     let shoeId: UUID?

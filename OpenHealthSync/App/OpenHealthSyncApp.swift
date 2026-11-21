@@ -135,6 +135,11 @@ struct LoopbackApp: App {
                 workoutManager.fetchRecentWorkouts()
                 Task { await workoutManager.extractNewWorkouts() }
             }
+            // A run that just reached the server got its pair there; read it
+            // back so a run needing a look is flagged without a relaunch.
+            .onChange(of: uploadedWorkoutCount) { _, _ in
+                Task { await shoeStore.load() }
+            }
             // Any /api call returning 401 signals a dead session → sign out.
             .onReceive(NotificationCenter.default.publisher(for: .trainingAPIUnauthorized)) { _ in
                 session.handleUnauthorized()
@@ -153,6 +158,7 @@ struct LoopbackApp: App {
                 guard session.isAuthenticated else { return }
 
                 await UnitsSync.reconcile(with: apiClient)
+                await shoeStore.load()
 
                 await scheduleManager.requestAuthorization()
                 await scheduleManager.loadScheduledWorkouts()
@@ -175,6 +181,7 @@ struct LoopbackApp: App {
                         guard session.isAuthenticated else { return }
                         await UnitsSync.reconcile(with: apiClient)
                     }
+                    Task { await shoeStore.load() }
                     Task {
                         await scheduleManager.loadScheduledWorkouts()
                         await scheduleManager.autoSync()
@@ -204,6 +211,13 @@ struct LoopbackApp: App {
                 guard session.isAuthenticated, let units = DisplayUnits(rawValue: raw) else { return }
                 Task { await UnitsSync.push(units, with: apiClient) }
             }
+        }
+    }
+
+    private var uploadedWorkoutCount: Int {
+        workoutManager.extractionStatuses.values.count { status in
+            if case .sent = status { return true }
+            return false
         }
     }
 
