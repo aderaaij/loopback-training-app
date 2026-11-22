@@ -24,6 +24,13 @@ class WorkoutManager {
 
     private let healthStore = HKHealthStore()
     private let sentKey = "sentWorkoutUUIDs"
+    /// Workouts sent soon after they ended, by id, with the end date. The
+    /// watch hands the heart rate of the minutes after a workout, the VO2 max
+    /// estimate and the effort rating to the phone late, so such a workout is
+    /// sent once more when they have had time to arrive.
+    private let awaitingLateFiguresKey = "workoutsAwaitingLateFigures"
+    /// How long after a workout's end its late figures can be counted on.
+    private static let lateFiguresSettleTime: TimeInterval = 15 * 60
 
     // MARK: - Configuration
 
@@ -193,6 +200,7 @@ class WorkoutManager {
             }
 
             markAsSent(workoutID)
+            noteLateFigures(for: workout)
             extractionStatuses[workoutID] = .sent(Date())
         } catch {
             extractionStatuses[workoutID] = .failed(error.localizedDescription)
@@ -263,8 +271,45 @@ class WorkoutManager {
             extractionStatuses[summary.id] != .sending
         }
 
+        // Plus the ones sent before their late figures could have arrived.
+        let due = workoutsDueForResend()
+        let resend = allWorkouts.filter { summary in
+            due.contains(summary.id.uuidString) &&
+            !pending.contains { $0.id == summary.id } &&
+            extractionStatuses[summary.id] != .extracting &&
+            extractionStatuses[summary.id] != .sending
+        }
+
         // Process concurrently in batches
-        await extractInBatches(pending)
+        await extractInBatches(pending + resend)
+    }
+
+    // MARK: - Late Figures
+
+    /// After a successful send: remember the workout if it ended too recently
+    /// for everything to be in Health, forget it otherwise.
+    private func noteLateFigures(for workout: HKWorkout) {
+        var awaiting = UserDefaults.standard.dictionary(forKey: awaitingLateFiguresKey) as? [String: Double] ?? [:]
+        if Date() < workout.endDate.addingTimeInterval(Self.lateFiguresSettleTime) {
+            awaiting[workout.uuid.uuidString] = workout.endDate.timeIntervalSince1970
+        } else {
+            awaiting[workout.uuid.uuidString] = nil
+        }
+        UserDefaults.standard.set(awaiting, forKey: awaitingLateFiguresKey)
+    }
+
+    /// Ids of remembered workouts whose late figures should be in by now.
+    /// Entries too old to still be in any history window are dropped.
+    private func workoutsDueForResend() -> Set<String> {
+        var awaiting = UserDefaults.standard.dictionary(forKey: awaitingLateFiguresKey) as? [String: Double] ?? [:]
+        guard !awaiting.isEmpty else { return [] }
+        let now = Date().timeIntervalSince1970
+        let stale = awaiting.filter { now - $0.value > 30 * 24 * 3600 }.keys
+        if !stale.isEmpty {
+            stale.forEach { awaiting[$0] = nil }
+            UserDefaults.standard.set(awaiting, forKey: awaitingLateFiguresKey)
+        }
+        return Set(awaiting.filter { now - $0.value >= Self.lateFiguresSettleTime }.keys)
     }
 
     // MARK: - Re-sync All
@@ -272,6 +317,7 @@ class WorkoutManager {
     func resyncAll() async {
         // Clear sent tracking so every workout is treated as new
         UserDefaults.standard.removeObject(forKey: sentKey)
+        UserDefaults.standard.removeObject(forKey: awaitingLateFiguresKey)
         extractionStatuses.removeAll()
 
         // Re-fetch the list, then extract & send each one

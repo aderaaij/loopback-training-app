@@ -511,6 +511,7 @@ struct WorkoutDetailView: View {
     @ViewBuilder
     private func richContent(_ d: DetailedWorkout) -> some View {
         statSection(d)
+        afterWorkoutTiles(d)
 
         if let route = d.route, route.count > 1 {
             LBDetailSection(title: "Route", trailing: routeTrailing(d), fill: LB.surfaceSunken) {
@@ -572,6 +573,36 @@ struct WorkoutDetailView: View {
             .fixedSize(horizontal: false, vertical: true)
         } else {
             statColumn(specs, stretch: false)
+        }
+    }
+
+    /// Figures the watch produces around the workout instead of during it:
+    /// how far heart rate fell in the two minutes after the end, and the
+    /// VO2 max estimate Health recorded for it. Each shows only when there is
+    /// a reading to stand behind it.
+    private func afterWorkoutSpecs(_ d: DetailedWorkout) -> [StatSpec] {
+        var specs: [StatSpec] = []
+        if let recovery = d.heartRateRecovery {
+            specs.append(StatSpec(label: "HR drop 1 min", value: "\(recovery.dropAfterOneMinute)", unit: "bpm"))
+            if let two = recovery.dropAfterTwoMinutes {
+                specs.append(StatSpec(label: "HR drop 2 min", value: "\(two)", unit: "bpm"))
+            }
+        }
+        if let vo2Max = d.vo2Max {
+            specs.append(StatSpec(label: "VO2 max", value: String(format: "%.1f", vo2Max)))
+        }
+        return specs
+    }
+
+    @ViewBuilder
+    private func afterWorkoutTiles(_ d: DetailedWorkout) -> some View {
+        let specs = afterWorkoutSpecs(d)
+        if !specs.isEmpty {
+            HStack(spacing: 12) {
+                ForEach(specs) { spec in
+                    LBStatTile(label: spec.label, value: spec.value, unit: spec.unit)
+                }
+            }
         }
     }
 
