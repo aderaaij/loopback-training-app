@@ -43,12 +43,18 @@ enum SyncStep: Int, Equatable, CaseIterable {
 @MainActor
 @Observable
 class WorkoutScheduleManager {
-    /// The watch's schedule, with one correction: a session the athlete
-    /// linked a workout to reads as complete. WorkoutKit only completes a
-    /// session that was started from the watch's own schedule.
+    /// The watch's schedule, with two corrections. A session a workout is
+    /// linked to reads as complete: WorkoutKit only completes a session that
+    /// was started from the watch's own schedule. And a session taken off the
+    /// watch because it was done some other way is still listed.
     private(set) var scheduledWorkouts: [ScheduledWorkoutPlan] = []
     /// The schedule exactly as WorkoutKit reports it.
     private var deviceScheduledWorkouts: [ScheduledWorkoutPlan] = []
+    /// Sessions taken off the watch because a workout counts for them.
+    private var retired = RetiredSessionStore()
+    /// Whether the server gave the links this launch. Cached ones are good
+    /// enough to draw with, but not to take a session off the watch.
+    private var didFetchSessionLinks = false
     /// Planned session → the workout that counts for it, from the server.
     private(set) var sessionLinks: [UUID: UUID] = [:]
     /// Whether the links were asked for this launch, successfully or not.
@@ -133,6 +139,7 @@ class WorkoutScheduleManager {
     // MARK: - Load Scheduled Workouts
 
     func loadScheduledWorkouts() async {
+        await reconcileWatchWithLinks()
         let current = await WorkoutScheduler.shared.scheduledWorkouts
         deviceScheduledWorkouts = current
         applySessionLinks()
@@ -268,14 +275,23 @@ class WorkoutScheduleManager {
 
     func loadSessionLinks() async {
         do {
-            setSessionLinks(from: try await apiClient.fetchWorkoutPlanLinks())
+            let changed = setSessionLinks(from: try await apiClient.fetchWorkoutPlanLinks())
+            let firstFetch = !didFetchSessionLinks
+            didFetchSessionLinks = true
+            if changed || firstFetch {
+                // A run recorded outside the plan may now count for a session
+                // the watch still offers, or have stopped counting for one.
+                await loadScheduledWorkouts()
+            }
         } catch {
             AppLog.sync.error("Failed to load workout plan links: \(String(describing: error), privacy: .public)")
         }
         didLoadSessionLinks = true
     }
 
-    private func setSessionLinks(from links: [WorkoutPlanLink]) {
+    /// Returns whether anything changed.
+    @discardableResult
+    private func setSessionLinks(from links: [WorkoutPlanLink]) -> Bool {
         var map: [UUID: UUID] = [:]
         // Newest first; the server keeps one workout per session, so a
         // duplicate can only be a stale row and the newest wins.
@@ -284,26 +300,74 @@ class WorkoutScheduleManager {
                 map[session] = link.id
             }
         }
-        guard map != sessionLinks else { return }
+        guard map != sessionLinks else { return false }
         sessionLinks = map
         applySessionLinks()
+        return true
     }
 
     private func applySessionLinks() {
-        scheduledWorkouts = deviceScheduledWorkouts.map { scheduled in
+        let onDevice = Set(deviceScheduledWorkouts.map(\.plan.id))
+        let device = deviceScheduledWorkouts.map { scheduled in
             guard !scheduled.complete, sessionLinks[scheduled.plan.id] != nil else { return scheduled }
             var done = scheduled
             done.complete = true
             return done
         }
+        // One that is no longer linked reads as any session that wasn't done.
+        let offWatch = retired.sessions.values
+            .filter { !onDevice.contains($0.plan.id) }
+            .map { session in
+                var session = session
+                session.complete = sessionLinks[session.plan.id] != nil
+                return session
+            }
+        scheduledWorkouts = device + offWatch
+    }
+
+    /// Brings the watch in line with the links. A session a workout counts
+    /// for leaves the watch when it is planned for today or later, because
+    /// the watch would keep offering it; it is kept in `retired` so it stays
+    /// in the calendar. Earlier ones are left alone: the watch no longer
+    /// offers them. A retired session that stopped counting and is still due
+    /// goes back on the watch.
+    private func reconcileWatchWithLinks() async {
+        guard didFetchSessionLinks,
+              await WorkoutScheduler.shared.authorizationState == .authorized else { return }
+
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        func isDue(_ scheduled: ScheduledWorkoutPlan) -> Bool {
+            (calendar.date(from: scheduled.date) ?? .distantPast) >= startOfToday
+        }
+
+        let onDevice = await WorkoutScheduler.shared.scheduledWorkouts
+        for scheduled in onDevice {
+            let id = scheduled.plan.id
+            guard !scheduled.complete, sessionLinks[id] != nil, isDue(scheduled) else {
+                // The watch has it (again), so its copy is the one to go by.
+                retired.remove(id: id)
+                continue
+            }
+            guard retired.add(scheduled) else { continue }
+            await WorkoutScheduler.shared.remove(scheduled.plan, at: scheduledDateMap[id] ?? scheduled.date)
+            AppLog.scheduling.info("Took session \(id, privacy: .public) off the watch: a workout counts for it")
+        }
+
+        let present = Set(onDevice.map(\.plan.id))
+        for session in retired.sessions.values
+        where sessionLinks[session.plan.id] == nil && isDue(session) && !present.contains(session.plan.id) {
+            await WorkoutScheduler.shared.schedule(session.plan, at: session.date)
+            scheduledDateMap[session.plan.id] = session.date
+            retired.remove(id: session.plan.id)
+            AppLog.scheduling.info("Put session \(session.plan.id, privacy: .public) back on the watch: no workout counts for it now")
+        }
     }
 
     /// Counts a recorded workout for a planned session, or with a nil session
     /// stops counting it. The server decides; nothing changes here when it
-    /// can't be reached. A session planned for a later day leaves the watch,
-    /// since it has now been done. One planned for today stays and shows as
-    /// complete, like a past one: taking it off would also take its row out
-    /// of the calendar and its event out of iOS Calendar.
+    /// can't be reached. A session that is still due leaves the watch, since
+    /// it has now been done, and keeps its place in the calendar.
     @discardableResult
     func setPlanLink(workoutId: UUID, sessionId: UUID?) async throws -> WorkoutContext {
         let context = try await apiClient.setWorkoutPlanLink(workoutId: workoutId, planWorkoutId: sessionId)
@@ -313,24 +377,8 @@ class WorkoutScheduleManager {
             links[sessionId] = workoutId
         }
         sessionLinks = links
-
-        let calendar = Calendar.current
-        let startOfToday = calendar.startOfDay(for: Date())
-        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday
-        let onLaterDay = deviceScheduledWorkouts.contains { scheduled in
-            scheduled.plan.id == sessionId
-                && !scheduled.complete
-                && (calendar.date(from: scheduled.date) ?? .distantPast) >= startOfTomorrow
-        }
-        if let sessionId, onLaterDay {
-            // Reloads the schedule, which applies the new links.
-            if !(await removeWorkout(id: sessionId)) {
-                AppLog.scheduling.warning("Linked session \(sessionId, privacy: .public) but couldn't take it off the watch")
-                applySessionLinks()
-            }
-        } else {
-            applySessionLinks()
-        }
+        // Applies the links, and moves sessions on or off the watch for them.
+        await loadScheduledWorkouts()
 
         Task { await refreshAfterPlanChange() }
         return context
@@ -614,7 +662,9 @@ class WorkoutScheduleManager {
         let onDevice = await WorkoutScheduler.shared.scheduledWorkouts
         let missing = Self.workoutsToRestore(
             expected: expected,
-            onDevice: Set(onDevice.map(\.plan.id)),
+            // A retired session isn't missing. The server stops expecting
+            // one once it is completed, which can land a moment later.
+            onDevice: Set(onDevice.map(\.plan.id)).union(retired.sessions.keys),
             // Completed workouts linger in the schedule. Counting them could
             // leave no room at all, while an attempt past the real limit just
             // doesn't land and is retried next sync.
@@ -655,12 +705,19 @@ class WorkoutScheduleManager {
     func removeAll() async {
         await WorkoutScheduler.shared.removeAllWorkouts()
         scheduledDateMap = [:]
+        retired.removeAll()
         await loadScheduledWorkouts()
     }
 
     // MARK: - Remove Single Workout
 
     func removeWorkout(id: UUID) async -> Bool {
+        if await isAbsentFromDevice(id), retired.remove(id: id) {
+            scheduledDateMap.removeValue(forKey: id)
+            await loadScheduledWorkouts()
+            return true
+        }
+
         guard let dateComponents = scheduledDateMap[id] else {
             AppLog.scheduling.warning("No stored date for workout \(id, privacy: .public), cannot remove")
             return false
@@ -692,9 +749,11 @@ class WorkoutScheduleManager {
     /// Moves a workout to a new date without changing its content.
     /// Used by the missed workout feedback flow when the user taps "Reschedule".
     func rescheduleWorkout(id: UUID, to newDate: Date) async -> Bool {
-        // Find the existing plan in the scheduler
+        // Find the existing plan in the scheduler, or among the sessions
+        // taken off the watch: one that was unlinked after its day can
+        // still be moved.
         let allScheduled = await WorkoutScheduler.shared.scheduledWorkouts
-        guard let match = allScheduled.first(where: { $0.plan.id == id }) else {
+        guard let plan = allScheduled.first(where: { $0.plan.id == id })?.plan ?? retired.sessions[id]?.plan else {
             AppLog.scheduling.warning("Workout \(id, privacy: .public) not found in scheduler for reschedule")
             return false
         }
@@ -711,7 +770,7 @@ class WorkoutScheduleManager {
             from: newDate
         )
 
-        await WorkoutScheduler.shared.schedule(match.plan, at: newDateComponents)
+        await WorkoutScheduler.shared.schedule(plan, at: newDateComponents)
         scheduledDateMap[id] = newDateComponents
         await loadScheduledWorkouts()
         return true
