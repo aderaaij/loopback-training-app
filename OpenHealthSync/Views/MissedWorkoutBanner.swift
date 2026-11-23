@@ -70,7 +70,6 @@ struct MissedWorkoutBanner: View {
             }
             .padding(16)
             .cardStyle(tint: LB.amber)
-            .padding(.horizontal)
             .sheet(isPresented: $showFeedbackSheet) {
                 MissedWorkoutFeedbackFlow(
                     missedWorkouts: detector.missedWorkouts,

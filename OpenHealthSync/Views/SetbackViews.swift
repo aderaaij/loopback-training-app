@@ -111,7 +111,6 @@ private struct SetbackCard: View {
         }
         .padding(16)
         .cardStyle(tint: LB.red)
-        .padding(.horizontal)
         .disabled(isSaving)
         .sheet(isPresented: $showingRecovered) {
             SetbackRecoveredSheet(setback: setback)
