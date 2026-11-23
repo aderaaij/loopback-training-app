@@ -14,7 +14,14 @@ import HealthKit
 
 nonisolated enum WorkoutCompositionBuilder {
 
-    static func buildCustomWorkout(from composition: QueuedWorkoutComposition) throws -> CustomWorkout {
+    /// With `alertEvery`, distance steps in the main part of the workout are
+    /// cut into steps of that length, so the watch taps at each one. Warmup
+    /// and cooldown can only be one step each, and a step with a time goal
+    /// has no distance to cut, so those stay whole.
+    static func buildCustomWorkout(
+        from composition: QueuedWorkoutComposition,
+        alertEvery: DistanceAlert.Interval? = nil
+    ) throws -> CustomWorkout {
         let activity = mapActivityType(composition.activityType)
         let location = mapLocation(composition.location)
 
@@ -22,15 +29,8 @@ nonisolated enum WorkoutCompositionBuilder {
             WorkoutStep(goal: mapGoal(step.goal), alert: mapAlert(step.alert))
         }
 
-        let blocks: [IntervalBlock] = composition.blocks.map { block in
-            let steps: [IntervalStep] = block.steps.map { step in
-                IntervalStep(
-                    mapPurpose(step.purpose),
-                    goal: mapGoal(step.goal),
-                    alert: mapAlert(step.alert)
-                )
-            }
-            return IntervalBlock(steps: steps, iterations: block.iterations)
+        let blocks: [IntervalBlock] = composition.blocks.flatMap { block in
+            intervalBlocks(for: block, alertEvery: alertEvery)
         }
 
         let cooldown: WorkoutStep? = composition.cooldown.map { step in
@@ -45,6 +45,51 @@ nonisolated enum WorkoutCompositionBuilder {
             blocks: blocks,
             cooldown: cooldown
         )
+    }
+
+    // MARK: - Distance Alerts
+
+    private static func intervalBlocks(
+        for block: CompositionBlock,
+        alertEvery: DistanceAlert.Interval?
+    ) -> [IntervalBlock] {
+        func step(_ source: CompositionIntervalStep, goal: WorkoutGoal? = nil) -> IntervalStep {
+            IntervalStep(mapPurpose(source.purpose), goal: goal ?? mapGoal(source.goal), alert: mapAlert(source.alert))
+        }
+        func cut(_ source: CompositionIntervalStep) -> (full: Int, last: Double?)? {
+            guard let alertEvery, source.goal.type == "distance", let value = source.goal.value else { return nil }
+            let total = Measurement(value: value, unit: mapLengthUnit(source.goal.unit)).converted(to: .meters).value
+            return DistanceAlert.cut(total: total, every: alertEvery.meters)
+        }
+        guard let alertEvery else {
+            return [IntervalBlock(steps: block.steps.map { step($0) }, iterations: block.iterations)]
+        }
+        let every = WorkoutGoal.distance(alertEvery.value, alertEvery.unit)
+        func lastGoal(_ meters: Double) -> WorkoutGoal {
+            .distance(meters.rounded(), .meters)
+        }
+
+        // A plain run: one step, once. Repeating the short step reads better
+        // on the watch ("3 of 8") than eight separate steps.
+        if block.steps.count == 1, block.iterations == 1, let source = block.steps.first, let pieces = cut(source) {
+            var result = [IntervalBlock(steps: [step(source, goal: every)], iterations: pieces.full)]
+            if let last = pieces.last {
+                result.append(IntervalBlock(steps: [step(source, goal: lastGoal(last))], iterations: 1))
+            }
+            return result
+        }
+
+        // Repeats can't nest, so inside a repeated block the pieces of a
+        // long step follow each other.
+        let steps: [IntervalStep] = block.steps.flatMap { source -> [IntervalStep] in
+            guard let pieces = cut(source) else { return [step(source)] }
+            var result = Array(repeating: step(source, goal: every), count: pieces.full)
+            if let last = pieces.last {
+                result.append(step(source, goal: lastGoal(last)))
+            }
+            return result
+        }
+        return [IntervalBlock(steps: steps, iterations: block.iterations)]
     }
 
     // MARK: - Mapping Helpers

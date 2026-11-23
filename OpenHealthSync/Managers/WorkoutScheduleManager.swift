@@ -623,7 +623,10 @@ class WorkoutScheduleManager {
     /// Builds a composition's CustomWorkout and schedules it under the queue
     /// item's id, recording the date `remove(_:at:)` will need later.
     private func scheduleOnWatch(_ composition: QueuedWorkoutComposition) async throws {
-        let customWorkout = try WorkoutCompositionBuilder.buildCustomWorkout(from: composition)
+        let customWorkout = try WorkoutCompositionBuilder.buildCustomWorkout(
+            from: composition,
+            alertEvery: DistanceAlert.currentInterval()
+        )
         let plan = WorkoutPlan(.custom(customWorkout), id: composition.id)
 
         let dateComponents = Calendar.current.dateComponents(
@@ -633,6 +636,43 @@ class WorkoutScheduleManager {
 
         await WorkoutScheduler.shared.schedule(plan, at: dateComponents)
         scheduledDateMap[composition.id] = dateComponents
+    }
+
+    // MARK: - Distance Alerts
+
+    /// Rebuilds the runs already on the watch after the distance alert
+    /// setting changed; new ones pick it up as they are scheduled. Each run
+    /// keeps the day the watch has it on. Best-effort: a run the server can't
+    /// describe right now keeps its old alerts.
+    func reapplyDistanceAlerts() async {
+        guard await WorkoutScheduler.shared.authorizationState == .authorized else { return }
+
+        let expected: [QueuedWorkoutComposition]
+        do {
+            expected = try await apiClient.fetchScheduledQueue(from: Calendar.current.startOfDay(for: Date()))
+        } catch {
+            AppLog.sync.error("Failed to fetch scheduled workouts to reapply distance alerts: \(String(describing: error), privacy: .public)")
+            return
+        }
+
+        let alertEvery = DistanceAlert.currentInterval()
+        let onDevice = await WorkoutScheduler.shared.scheduledWorkouts
+        var rebuilt = 0
+        for composition in expected {
+            guard let current = onDevice.first(where: { $0.plan.id == composition.id }), !current.complete,
+                  let workout = try? WorkoutCompositionBuilder.buildCustomWorkout(from: composition, alertEvery: alertEvery)
+            else { continue }
+            if case .custom(let existing) = current.plan.workout, existing == workout { continue }
+
+            let date = scheduledDateMap[composition.id] ?? current.date
+            await WorkoutScheduler.shared.remove(current.plan, at: date)
+            await WorkoutScheduler.shared.schedule(WorkoutPlan(.custom(workout), id: composition.id), at: date)
+            scheduledDateMap[composition.id] = date
+            rebuilt += 1
+        }
+        guard rebuilt > 0 else { return }
+        AppLog.scheduling.info("Rebuilt \(rebuilt) runs for the distance alert setting")
+        await loadScheduledWorkouts()
     }
 
     // MARK: - Restore Missing Workouts

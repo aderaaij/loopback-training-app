@@ -3,7 +3,7 @@
 //  OpenHealthSync
 //
 //  Training preferences: preferred run time, week start, the iOS Calendar
-//  mirror and display units.
+//  mirror, distance alerts on the watch and display units.
 //
 
 import SwiftUI
@@ -13,7 +13,12 @@ struct TrainingSettingsView: View {
     @AppStorage("weekStartsOnMonday") private var weekStartsOnMonday: Bool = true
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @AppStorage(CalendarSync.enabledKey) private var calendarSyncEnabled = false
+    @AppStorage(DistanceAlert.storageKey) private var distanceAlert: DistanceAlert = .off
+    @AppStorage(DistanceAlert.customValueKey) private var distanceAlertCustomValue = DistanceAlert.defaultCustomValue
     @State private var showingCalendarAccessAlert = false
+    /// The setting the watch's runs were last built for; nil until the
+    /// screen has appeared, which is not a change.
+    @State private var appliedDistanceAlertSetting: String?
     @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @Environment(\.openURL) private var openURL
 
@@ -45,6 +50,26 @@ struct TrainingSettingsView: View {
             }
 
             Section {
+                Picker("Distance alerts", selection: $distanceAlert) {
+                    Text("Off").tag(DistanceAlert.off)
+                    Text("Every kilometer").tag(DistanceAlert.kilometer)
+                    Text("Every mile").tag(DistanceAlert.mile)
+                    Text("Every \(distanceAlertCustomValue) \(units.distanceUnit)").tag(DistanceAlert.custom)
+                }
+                if distanceAlert == .custom {
+                    Stepper(
+                        "Every \(distanceAlertCustomValue) \(units.distanceUnit)",
+                        value: $distanceAlertCustomValue,
+                        in: DistanceAlert.customRange
+                    )
+                }
+            } header: {
+                Text("Apple Watch")
+            } footer: {
+                Text("Taps your wrist as you pass each distance, like the Workout app does on a plain run. Loopback does this by dividing the run into shorter steps, so your watch counts them (3 of 8) and shows each as its own interval afterwards. Works for steps set by distance, not by time, and not during warmup or cooldown.")
+            }
+
+            Section {
                 Picker("Distance and pace", selection: $units) {
                     ForEach(DisplayUnits.allCases) { option in
                         Text(option.label).tag(option)
@@ -60,6 +85,22 @@ struct TrainingSettingsView: View {
         .lbList()
         .navigationTitle("Training")
         .navigationBarTitleDisplayMode(.inline)
+        // Runs already on the watch are rebuilt. The pause lets a few taps
+        // on the stepper settle first.
+        .task(id: distanceAlertSetting) {
+            guard let applied = appliedDistanceAlertSetting else {
+                appliedDistanceAlertSetting = distanceAlertSetting
+                return
+            }
+            guard applied != distanceAlertSetting else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await applyDistanceAlertSetting()
+        }
+        // Leaving within that pause cancels it; the change still counts.
+        .onDisappear {
+            Task { await applyDistanceAlertSetting() }
+        }
         .alert("Calendar access is off", isPresented: $showingCalendarAccessAlert) {
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
@@ -68,6 +109,21 @@ struct TrainingSettingsView: View {
         } message: {
             Text("Allow Loopback full access to Calendar in iOS Settings, then switch this on again.")
         }
+    }
+
+    /// Everything the alert distance depends on. Units count only for the
+    /// custom distance.
+    private var distanceAlertSetting: String {
+        switch distanceAlert {
+        case .off, .kilometer, .mile: distanceAlert.rawValue
+        case .custom: "\(distanceAlertCustomValue) \(units.distanceUnit)"
+        }
+    }
+
+    private func applyDistanceAlertSetting() async {
+        guard let applied = appliedDistanceAlertSetting, applied != distanceAlertSetting else { return }
+        appliedDistanceAlertSetting = distanceAlertSetting
+        await scheduleManager.reapplyDistanceAlerts()
     }
 
     /// On only while iOS still grants access: if that was revoked in iOS
