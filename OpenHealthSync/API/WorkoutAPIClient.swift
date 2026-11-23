@@ -550,6 +550,61 @@ actor WorkoutAPIClient {
         ] as [String: Any])
     }
 
+    // MARK: - Setbacks (server 0.1.25+)
+
+    func fetchSetbacks() async throws -> [Setback] {
+        try await request("GET", "api/setbacks")
+    }
+
+    /// `id` makes a retried create land on the same row.
+    func createSetback(_ draft: SetbackDraft, id: UUID) async throws -> Setback {
+        var body = Self.setbackFields(draft)
+        body["id"] = id.uuidString
+        return try await request("POST", "api/setbacks", body: JSONSerialization.data(withJSONObject: body))
+    }
+
+    /// Replaces everything the athlete can edit on a setback.
+    func updateSetback(id: UUID, draft: SetbackDraft) async throws -> Setback {
+        try await request(
+            "PATCH", "api/setbacks/\(id.uuidString)",
+            body: JSONSerialization.data(withJSONObject: Self.setbackFields(draft))
+        )
+    }
+
+    /// Closes a setback on its last day, or reopens it with nil.
+    func setSetbackEnd(id: UUID, end: SetbackDay?) async throws -> Setback {
+        let value: Any = end?.text ?? NSNull()
+        return try await request(
+            "PATCH", "api/setbacks/\(id.uuidString)",
+            body: JSONSerialization.data(withJSONObject: ["endDate": value])
+        )
+    }
+
+    func deleteSetback(id: UUID) async throws {
+        try await perform("DELETE", "api/setbacks/\(id.uuidString)")
+    }
+
+    /// How the athlete felt on one day; sending a day again replaces it.
+    func putSetbackCheckin(id: UUID, day: SetbackDay, status: SetbackStatus) async throws -> Setback {
+        try await request(
+            "PUT", "api/setbacks/\(id.uuidString)/checkins/\(day.text)",
+            body: JSONSerialization.data(withJSONObject: ["status": status.rawValue])
+        )
+    }
+
+    /// Cleared fields go out as explicit nulls, which Codable's synthesized
+    /// encoding would drop.
+    private static func setbackFields(_ draft: SetbackDraft) -> [String: Any] {
+        [
+            "kind": draft.kind.rawValue,
+            "severity": draft.severity.rawValue,
+            "startDate": draft.start.text,
+            "endDate": draft.end?.text ?? NSNull(),
+            "bodyPart": draft.bodyPart ?? NSNull(),
+            "note": draft.note ?? NSNull(),
+        ]
+    }
+
     // MARK: - Workout Inventory Sync
 
     func syncInventory(_ inventory: [WorkoutInventoryItem]) async throws {
@@ -607,8 +662,19 @@ actor WorkoutAPIClient {
     // MARK: - Workout Feedback
 
     /// 201 Created or 409 Conflict (idempotent re-submit) are both acceptable.
+    ///
+    /// A server older than 0.1.25 doesn't know the reasons "sick" and
+    /// "injured" and answers 422. The check-in is then sent as "other" with
+    /// the reason spelled out in the note, so it isn't retried forever.
     func submitFeedback(_ payload: WorkoutFeedbackPayload) async throws {
-        try await perform("POST", "api/workouts/feedback", body: Self.encoder.encode(payload), accepting: [409])
+        let (_, status) = try await perform(
+            "POST", "api/workouts/feedback",
+            body: Self.encoder.encode(payload),
+            accepting: [409, 422]
+        )
+        guard status == 422 else { return }
+        guard let fallback = payload.forOlderServer else { throw WorkoutAPIError.serverError(422) }
+        try await perform("POST", "api/workouts/feedback", body: Self.encoder.encode(fallback), accepting: [409])
     }
 
     // MARK: - Data Consent
@@ -880,4 +946,21 @@ nonisolated struct WorkoutFeedbackPayload: Codable, Sendable {
     let action: String
     let newDate: Date?
     let dismissed: Bool
+
+    /// The same check-in with a reason every server version accepts; nil when
+    /// the reason is already one of those.
+    var forOlderServer: WorkoutFeedbackPayload? {
+        let label: String
+        switch reason {
+        case "sick": label = "Sick"
+        case "injured": label = "Injured"
+        default: return nil
+        }
+        let note = [label, reasonNote].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ": ")
+        return WorkoutFeedbackPayload(
+            id: id, workoutId: workoutId, workoutName: workoutName,
+            scheduledDate: scheduledDate, detectedAt: detectedAt, acknowledgedAt: acknowledgedAt,
+            reason: "other", reasonNote: note, action: action, newDate: newDate, dismissed: dismissed
+        )
+    }
 }

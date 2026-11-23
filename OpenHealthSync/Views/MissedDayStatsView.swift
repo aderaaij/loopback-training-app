@@ -170,6 +170,8 @@ struct MissedDayStatsView: View {
         case .tired: return "Tired"
         case .weather: return "Weather"
         case .soreness: return "Sore"
+        case .sick: return "Sick"
+        case .injured: return "Injured"
         case .motivation: return "Not feeling it"
         case .other: return "Other"
         }

@@ -20,6 +20,13 @@ actor HealthMetricsSyncer {
     /// install that shipped before basal energy existed and so can never
     /// re-run. See `syncQuantityMetrics` for what this one-shot does.
     private let basalBackfillKey = "basalEnergyBackfillDone"
+    /// The same one-shot for sleeping wrist temperature, which arrived later
+    /// still. Counts attempts rather than storing a flag: the deep pass can
+    /// run before the athlete has answered the permission sheet for the new
+    /// type and come back empty, so it is retried a few times, and given up
+    /// on for a watch that records none.
+    private let wristTemperatureBackfillKey = "wristTemperatureBackfillAttempts"
+    private let wristTemperatureBackfillDone = 3
     private let calendar = Calendar.current
 
     /// How far the one-shot history backfill reaches. A year comfortably
@@ -219,7 +226,12 @@ actor HealthMetricsSyncer {
         let isBasalBackfill = domains.contains(.activity)
             && !UserDefaults.standard.bool(forKey: basalBackfillKey)
 
-        if isBasalBackfill {
+        // The same deep pass for sleeping wrist temperature (recovery domain).
+        // Its history is what the server compares an illness against.
+        let wristAttempts = UserDefaults.standard.integer(forKey: wristTemperatureBackfillKey)
+        let isWristBackfill = domains.contains(.recovery) && wristAttempts < wristTemperatureBackfillDone
+
+        if isBasalBackfill || isWristBackfill {
             startDate = calendar.startOfDay(
                 for: calendar.date(byAdding: .month, value: -backfillMonths, to: now) ?? now
             )
@@ -237,6 +249,10 @@ actor HealthMetricsSyncer {
         }
 
         let metrics = try await fetchMetrics(from: startDate, to: now, domains: domains)
+        if isWristBackfill, metrics.isEmpty {
+            // Nothing to upload, but the attempt still counts.
+            UserDefaults.standard.set(wristAttempts + 1, forKey: wristTemperatureBackfillKey)
+        }
         guard !metrics.isEmpty else { return }
 
         let payload = HealthMetricsBulkPayload(metrics: metrics)
@@ -247,6 +263,14 @@ actor HealthMetricsSyncer {
         // the next sync retries the deep pass rather than skipping it forever.
         if isBasalBackfill {
             UserDefaults.standard.set(true, forKey: basalBackfillKey)
+        }
+        if isWristBackfill {
+            // Done once it found readings; otherwise one attempt nearer giving up.
+            let found = metrics.contains { $0.wristTemperature != nil }
+            UserDefaults.standard.set(
+                found ? wristTemperatureBackfillDone : wristAttempts + 1,
+                forKey: wristTemperatureBackfillKey
+            )
         }
         AppLog.health.info("Synced \(metrics.count) days of health metrics")
     }
@@ -284,6 +308,7 @@ actor HealthMetricsSyncer {
         async let leanMassData = fetchLatestByDay(.leanBodyMass, unit: .gramUnit(with: .kilo), from: startDate, to: endDate, enabled: body)
         async let respRateData = fetchAverageByDay(.respiratoryRate, unit: .beatsPerMinute(), from: startDate, to: endDate, enabled: recovery)
         async let spo2Data = fetchAverageByDay(.oxygenSaturation, unit: .percent(), from: startDate, to: endDate, enabled: recovery)
+        async let wristTempData = fetchSleepingWristTemperatureByWakeDay(from: startDate, to: endDate, enabled: recovery)
 
         let restingHR = (try? await restingHRData) ?? [:]
         let hrv = (try? await hrvData) ?? [:]
@@ -296,10 +321,11 @@ actor HealthMetricsSyncer {
         let leanMass = (try? await leanMassData) ?? [:]
         let respRate = (try? await respRateData) ?? [:]
         let spo2 = (try? await spo2Data) ?? [:]
+        let wristTemp = (try? await wristTempData) ?? [:]
 
         // Collect all dates that have any data
         var allDates = Set<Date>()
-        for dict in [restingHR, hrv, weight, vo2, steps, energy, basal, bodyFat, leanMass, respRate, spo2] {
+        for dict in [restingHR, hrv, weight, vo2, steps, energy, basal, bodyFat, leanMass, respRate, spo2, wristTemp] {
             allDates.formUnion(dict.keys)
         }
 
@@ -312,7 +338,8 @@ actor HealthMetricsSyncer {
                 steps[dayStart] != nil || energy[dayStart] != nil ||
                 basal[dayStart] != nil ||
                 bodyFat[dayStart] != nil || leanMass[dayStart] != nil ||
-                respRate[dayStart] != nil || spo2[dayStart] != nil
+                respRate[dayStart] != nil || spo2[dayStart] != nil ||
+                wristTemp[dayStart] != nil
 
             guard hasAnyMetric else { return nil }
 
@@ -332,7 +359,8 @@ actor HealthMetricsSyncer {
                 bodyFatPercentage: bodyFatPct,
                 leanBodyMass: leanMass[dayStart],
                 respiratoryRate: respRate[dayStart],
-                spo2: spo2Pct
+                spo2: spo2Pct,
+                wristTemperature: wristTemp[dayStart]
             )
         }
     }
@@ -698,6 +726,52 @@ actor HealthMetricsSyncer {
         }
     }
 
+    // MARK: - Sleeping wrist temperature
+
+    /// One reading per night, in °C, keyed by the day the athlete woke up.
+    ///
+    /// Not a statistics query like the others: the sample spans the whole
+    /// night, so it usually starts on the evening before, and bucketing by
+    /// start would file last night's reading under yesterday. The day it ends
+    /// on is the day it describes, which is also how the server attributes
+    /// sleep. Two readings ending on one day (a nap the watch measured) keep
+    /// the later one.
+    private func fetchSleepingWristTemperatureByWakeDay(
+        from startDate: Date,
+        to endDate: Date,
+        enabled: Bool = true
+    ) async throws -> [Date: Double] {
+        guard enabled else { return [:] }
+        let quantityType = HKQuantityType(.appleSleepingWristTemperature)
+        // Any sample that ends inside the window, wherever it started.
+        let predicate = NSPredicate(
+            format: "%K >= %@ AND %K <= %@",
+            HKPredicateKeyPathEndDate, startDate as NSDate,
+            HKPredicateKeyPathEndDate, endDate as NSDate
+        )
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: quantityType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                var dayValues: [Date: Double] = [:]
+                for case let sample as HKQuantitySample in samples ?? [] {
+                    let wakeDay = self.calendar.startOfDay(for: sample.endDate)
+                    dayValues[wakeDay] = sample.quantity.doubleValue(for: .degreeCelsius())
+                }
+                continuation.resume(returning: dayValues)
+            }
+            healthStore.execute(query)
+        }
+    }
+
     // MARK: - Latest by Day (weight, body fat, lean mass)
 
     private func fetchLatestByDay(
@@ -835,6 +909,11 @@ actor HealthMetricsSyncer {
         // still owes us those columns if the athlete enables it later.
         if domains.contains(.activity) {
             UserDefaults.standard.set(true, forKey: basalBackfillKey)
+        }
+        // Likewise for wrist temperature, when recovery was in scope and the
+        // pass actually found readings.
+        if domains.contains(.recovery), metrics.contains(where: { $0.wristTemperature != nil }) {
+            UserDefaults.standard.set(wristTemperatureBackfillDone, forKey: wristTemperatureBackfillKey)
         }
         AppLog.health.info("History backfill: sent \(samples.count) sleep samples (server stored \(result.stored) across \(result.daysUpdated) day(s)), \(metrics.count) days of metrics, and \(nutritionDays.map(String.init) ?? "no") days of nutrition")
         return HealthHistoryBackfillResult(

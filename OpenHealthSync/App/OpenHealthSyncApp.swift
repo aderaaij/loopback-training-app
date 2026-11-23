@@ -16,6 +16,7 @@ struct LoopbackApp: App {
     @State private var workoutManager: WorkoutManager
     @State private var scheduleManager: WorkoutScheduleManager
     @State private var shoeStore: ShoeStore
+    @State private var setbackStore: SetbackStore
     @State private var missedWorkoutDetector = MissedWorkoutDetector()
     @State private var notificationManager: NotificationManager
     @State private var backgroundSyncManager: BackgroundSyncManager
@@ -68,6 +69,7 @@ struct LoopbackApp: App {
         _workoutManager = State(initialValue: wm)
         _scheduleManager = State(initialValue: sm)
         _shoeStore = State(initialValue: ShoeStore(apiClient: client))
+        _setbackStore = State(initialValue: SetbackStore(apiClient: client))
         _notificationManager = State(initialValue: nm)
         _backgroundSyncManager = State(initialValue: BackgroundSyncManager(
             workoutManager: wm,
@@ -120,6 +122,7 @@ struct LoopbackApp: App {
             .environment(scheduleManager)
             .environment(workoutManager)
             .environment(shoeStore)
+            .environment(setbackStore)
             // A session that just got a workout is no longer missed, and one
             // that lost its workout may be again.
             .onChange(of: scheduleManager.sessionLinks) { _, _ in
@@ -127,7 +130,10 @@ struct LoopbackApp: App {
             }
             // Shown anew after every sign-in: whatever the store still holds
             // belongs to the previous account.
-            .onAppear { shoeStore.reset() }
+            .onAppear {
+                shoeStore.reset()
+                setbackStore.reset()
+            }
             .onChange(of: workoutHistory) { _, _ in
                 // A longer window brings older workouts into view: list
                 // them and upload the ones the server hasn't had.
@@ -159,6 +165,7 @@ struct LoopbackApp: App {
 
                 await UnitsSync.reconcile(with: apiClient)
                 await shoeStore.load()
+                await setbackStore.load()
 
                 await scheduleManager.requestAuthorization()
                 await scheduleManager.loadScheduledWorkouts()
@@ -182,6 +189,7 @@ struct LoopbackApp: App {
                         await UnitsSync.reconcile(with: apiClient)
                     }
                     Task { await shoeStore.load() }
+                    Task { await setbackStore.load() }
                     Task {
                         await scheduleManager.loadScheduledWorkouts()
                         await scheduleManager.autoSync()
