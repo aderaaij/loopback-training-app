@@ -44,6 +44,69 @@ struct DetailedWorkout: Codable, Sendable {
     let metadata: [String: String]?
     let effortScore: Double?              // user-rated RPE 1–10 (Apple Watch post-workout)
     let estimatedEffortScore: Double?     // system-estimated RPE 1–10
+    let endHeartRate: Double?             // bpm as the workout ended
+    let heartRateAfter1Min: Double?       // bpm one minute after the end
+    let heartRateAfter2Min: Double?       // bpm two minutes after the end
+    let vo2Max: Double?                   // mL/kg/min, the estimate Health recorded for this workout
+
+    /// The readings after the end, when there are enough to show a drop.
+    var heartRateRecovery: HeartRateRecovery? {
+        guard let endHeartRate, let heartRateAfter1Min else { return nil }
+        return HeartRateRecovery(atEnd: endHeartRate, afterOneMinute: heartRateAfter1Min,
+                                 afterTwoMinutes: heartRateAfter2Min)
+    }
+}
+
+// MARK: - Heart Rate Recovery
+
+/// Heart rate as a workout ended and in the two minutes after it. The watch
+/// keeps measuring for a few minutes once a workout is over; the drop from the
+/// end reading is the recovery figure Fitness shows.
+struct HeartRateRecovery: Sendable, Equatable {
+    let atEnd: Double
+    let afterOneMinute: Double
+    let afterTwoMinutes: Double?
+
+    var dropAfterOneMinute: Int { Int((atEnd - afterOneMinute).rounded()) }
+    var dropAfterTwoMinutes: Int? { afterTwoMinutes.map { Int((atEnd - $0).rounded()) } }
+
+    /// How far before the end a reading still counts as the end reading.
+    private static let endLookback: TimeInterval = 20
+    /// How far from the minute mark a reading may sit and still stand for it.
+    private static let markTolerance: TimeInterval = 10
+    /// A pause running into the end longer than this means the athlete had
+    /// already stopped: the heart rate fell before the workout was ended, and
+    /// what is left to measure says nothing.
+    private static let longestTrailingPause: TimeInterval = 30
+
+    /// Picks the three readings out of heart rate samples around a workout's
+    /// end. Returns nil rather than a figure that would mislead: no reading
+    /// close to the end, none close to the one-minute mark, or a workout that
+    /// sat paused before it was ended.
+    static func measure(samples: [TimeSeries], workoutEnd: Date, pauses: [DateInterval]) -> HeartRateRecovery? {
+        if let last = pauses.max(by: { $0.end < $1.end }),
+           last.end >= workoutEnd.addingTimeInterval(-1),
+           last.duration > longestTrailingPause {
+            return nil
+        }
+
+        let valid = samples.filter { $0.value > 0 }
+        let atEnd = valid
+            .filter { $0.timestamp <= workoutEnd.addingTimeInterval(2)
+                && $0.timestamp >= workoutEnd.addingTimeInterval(-endLookback) }
+            .max { $0.timestamp < $1.timestamp }
+
+        func reading(after seconds: TimeInterval) -> Double? {
+            let mark = workoutEnd.addingTimeInterval(seconds)
+            return valid
+                .filter { abs($0.timestamp.timeIntervalSince(mark)) <= markTolerance }
+                .min { abs($0.timestamp.timeIntervalSince(mark)) < abs($1.timestamp.timeIntervalSince(mark)) }?
+                .value
+        }
+
+        guard let atEnd, let one = reading(after: 60) else { return nil }
+        return HeartRateRecovery(atEnd: atEnd.value, afterOneMinute: one, afterTwoMinutes: reading(after: 120))
+    }
 }
 
 // MARK: - Route

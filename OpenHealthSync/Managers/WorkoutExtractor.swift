@@ -53,6 +53,12 @@ actor WorkoutExtractor {
             workout, type: HKQuantityType(.estimatedWorkoutEffortScore)
         )
 
+        async let aroundEndHeartRate = fetchHeartRate(
+            from: workout.endDate.addingTimeInterval(-30),
+            to: workout.endDate.addingTimeInterval(150), unit: bpm
+        )
+        async let vo2MaxEstimate = fetchVO2Max(for: workout)
+
         let route = try? await routePoints
         let hr = try? await heartRateData
         let cad = try? await cadenceData
@@ -63,6 +69,8 @@ actor WorkoutExtractor {
         let gct = try? await gctData
         let rpe = await effortScore
         let estRpe = await estimatedEffortScore
+        let endHr = (try? await aroundEndHeartRate) ?? []
+        let vo2Max = await vo2MaxEstimate
 
         let activities = extractActivities(workout)
         let events = extractEvents(workout)
@@ -74,6 +82,10 @@ actor WorkoutExtractor {
         let splits = computeSplits(
             route: route ?? [], heartRate: hr, cadence: cad, power: pwr,
             pauses: pauses
+        )
+
+        let recovery = HeartRateRecovery.measure(
+            samples: endHr, workoutEnd: workout.endDate, pauses: pauses
         )
 
         // Downsample for the JSON payload
@@ -120,8 +132,46 @@ actor WorkoutExtractor {
             events: events?.isEmpty == true ? nil : events,
             metadata: metadataDict,
             effortScore: rpe,
-            estimatedEffortScore: estRpe
+            estimatedEffortScore: estRpe,
+            endHeartRate: recovery?.atEnd,
+            heartRateAfter1Min: recovery?.afterOneMinute,
+            heartRateAfter2Min: recovery?.afterTwoMinutes,
+            vo2Max: vo2Max
         )
+    }
+
+    // MARK: - After the Workout
+
+    /// Heart rate between two instants, whether or not it belongs to a
+    /// workout. The watch keeps measuring for a few minutes after a workout
+    /// ends, and those samples are saved to Health on their own.
+    private func fetchHeartRate(from start: Date, to end: Date, unit: HKUnit) async throws -> [TimeSeries] {
+        let type = HKQuantityType(.heartRate)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        let samples = try await fetchSamples(type: type, predicate: predicate)
+        // A series sample that overlaps the window expands to readings
+        // outside it as well.
+        return try await timeSeries(from: samples, type: type, unit: unit)
+            .filter { $0.timestamp >= start && $0.timestamp <= end }
+    }
+
+    /// The VO2 max estimate Health recorded for this workout, or nil. Health
+    /// stores the estimate as a sample of its own with no link to the workout,
+    /// so it is matched by time: the newest one dated between the start and a
+    /// few minutes after the end. Not every workout produces one.
+    ///
+    /// VO2 max is a `body` figure. An athlete who keeps that category to
+    /// themselves does not have it read or sent here either.
+    private func fetchVO2Max(for workout: HKWorkout) async -> Double? {
+        guard DataConsent.current.contains(.body) else { return nil }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: workout.startDate,
+            end: workout.endDate.addingTimeInterval(5 * 60),
+            options: .strictStartDate
+        )
+        let samples = try? await fetchSamples(type: HKQuantityType(.vo2Max), predicate: predicate)
+        return (samples?.last as? HKQuantitySample)?
+            .quantity.doubleValue(for: HKUnit(from: "ml/kg*min"))
     }
 
     // MARK: - Effort Score
@@ -244,6 +294,14 @@ actor WorkoutExtractor {
         unit: HKUnit
     ) async throws -> [TimeSeries] {
         let samples = try await fetchSamples(for: workout, type: type)
+        return try await timeSeries(from: samples, type: type, unit: unit)
+    }
+
+    private func timeSeries(
+        from samples: [HKSample],
+        type: HKQuantityType,
+        unit: HKUnit
+    ) async throws -> [TimeSeries] {
         var result: [TimeSeries] = []
 
         for sample in samples {
@@ -585,12 +643,16 @@ actor WorkoutExtractor {
 
     // MARK: - Helpers
 
+    private func fetchSamples(for workout: HKWorkout, type: HKSampleType) async throws -> [HKSample] {
+        try await fetchSamples(type: type, predicate: HKQuery.predicateForObjects(from: workout))
+    }
+
+    /// Samples of one type matching a predicate, oldest first.
     private func fetchSamples(
-        for workout: HKWorkout,
-        type: HKSampleType
+        type: HKSampleType,
+        predicate: NSPredicate
     ) async throws -> [HKSample] {
         try await withCheckedThrowingContinuation { continuation in
-            let predicate = HKQuery.predicateForObjects(from: workout)
             let sort = NSSortDescriptor(
                 key: HKSampleSortIdentifierStartDate, ascending: true
             )

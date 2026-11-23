@@ -302,6 +302,41 @@ final class DebugWorkoutSeeder {
         ))
         try await routeBuilder.finishRoute(with: workout, metadata: nil)
 
+        // What the watch adds once a run is over: heart rate for three more
+        // minutes, and (not after an easy run here) a VO2 max estimate. Saved
+        // outside the workout, as on a real device. No random numbers, so the
+        // rest of the seed stays what it was.
+        let bpmUnit = HKUnit.count().unitDivided(by: .minute())
+        // Start from the last reading of the run itself, so the drop is the
+        // one the seed means: more after a hard finish than an easy one.
+        let endBpm = samples
+            .compactMap { $0 as? HKQuantitySample }
+            .filter { $0.quantityType == Self.heartRateType }
+            .max { $0.startDate < $1.startDate }?
+            .quantity.doubleValue(for: bpmUnit) ?? 140
+        let fall: Double    // bpm lost over the first two minutes
+        switch kind {
+        case .intervals: fall = 40
+        case .tempo:     fall = 36
+        case .long:      fall = 34
+        case .easy:      fall = 30
+        }
+        var after: [HKSample] = stride(from: 5.0, through: 180.0, by: 5.0).map { t in
+            let at = end.addingTimeInterval(t)
+            let bpm = endBpm - fall * (1 - exp(-t / 55)) / (1 - exp(-120.0 / 55))
+            return HKQuantitySample(type: Self.heartRateType,
+                                    quantity: HKQuantity(unit: bpmUnit, doubleValue: bpm),
+                                    start: at, end: at)
+        }
+        if kind != .easy {
+            let daysAgo = Date().timeIntervalSince(end) / 86_400
+            after.append(HKQuantitySample(type: HKQuantityType(.vo2Max),
+                                          quantity: HKQuantity(unit: HKUnit(from: "ml/kg*min"),
+                                                               doubleValue: 46.8 - daysAgo * 0.03),
+                                          start: end, end: end))
+        }
+        try await healthStore.save(after.filter { $0.endDate <= Date() })
+
         return workout.uuid
     }
 
