@@ -173,6 +173,10 @@ struct PlanDetailView: View {
 
     /// Footer for the cadence section: the cycle horizon, cueing when it's
     /// time to plan the next block.
+    private var hasWeeklyCadence: Bool {
+        !((planSchedule?.schedule ?? plan.metadata?.schedule)?.days.isEmpty ?? true)
+    }
+
     private var horizonText: String? {
         guard let end = plan.end, let days = plan.daysRemaining else { return nil }
         let endString = PlanFormat.medium.string(from: end)
@@ -208,7 +212,9 @@ struct PlanDetailView: View {
                 .listRowBackground(LB.surface)
             }
 
-            if let schedule = planSchedule?.schedule ?? plan.metadata?.schedule {
+            // A plan of individually dated sessions has no weekly cadence
+            // to list; its sessions follow below.
+            if let schedule = planSchedule?.schedule ?? plan.metadata?.schedule, !schedule.days.isEmpty {
                 Section {
                     ForEach(schedule.orderedDays, id: \.weekday) { day in
                         CadenceRow(weekday: day.weekday, routine: day.routine)
@@ -230,6 +236,11 @@ struct PlanDetailView: View {
                     }
                 } header: {
                     LBSectionHeader(title: "Sessions (\(sessions.count))")
+                } footer: {
+                    // Normally under the weekly cadence, which this plan lacks.
+                    if !hasWeeklyCadence, let horizonText {
+                        Text(horizonText)
+                    }
                 }
                 .listRowBackground(LB.surface)
             }

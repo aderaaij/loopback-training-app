@@ -68,11 +68,24 @@ nonisolated struct RoutineRef: Codable, Sendable {
     let routineId: String?
 }
 
+/// A strength session on its own date, outside the weekly cadence.
+nonisolated struct DatedSession: Codable, Sendable {
+    /// Local calendar day as "yyyy-MM-dd".
+    let date: String
+    let title: String
+    let routineId: String?
+
+    var day: Date? { ScheduleDay.date(from: date) }
+}
+
 nonisolated struct PlanSchedule: Codable, Sendable {
     let startDate: String
     let weeks: Int
-    /// Weekday key ("mon".."sun") → Hevy routine reference.
+    /// Weekday key ("mon".."sun") → Hevy routine reference. Empty for a plan
+    /// made of sessions on individual dates only.
     let days: [String: RoutineRef]
+    /// Sessions on their own dates (server 0.1.26 and later).
+    let sessions: [DatedSession]?
     /// Optional default time of day, e.g. "07:00".
     let time: String?
     let timezone: String?
@@ -89,10 +102,22 @@ nonisolated struct PlanSchedule: Codable, Sendable {
             }
     }
 
-    /// Compact cadence summary like "Tue Legs · Thu Upper Push".
+    /// Compact cadence summary like "Tue Legs · Thu Upper Push". A plan
+    /// without a weekly cadence names its next dated sessions instead, like
+    /// "Thu 26 Nov Legs · Sat 28 Nov Upper Push". Empty when it has neither.
     var summary: String {
-        orderedDays
-            .map { "\($0.weekday.capitalized) \($0.routine.title)" }
+        guard days.isEmpty else {
+            return orderedDays
+                .map { "\($0.weekday.capitalized) \($0.routine.title)" }
+                .joined(separator: " · ")
+        }
+        let today = Calendar.current.startOfDay(for: Date())
+        return (sessions ?? [])
+            .compactMap { session in session.day.map { (day: $0, title: session.title) } }
+            .filter { $0.day >= today }
+            .sorted { $0.day < $1.day }
+            .prefix(2)
+            .map { "\($0.day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))) \($0.title)" }
             .joined(separator: " · ")
     }
 }
