@@ -17,6 +17,8 @@ enum MissedWorkoutReason: String, Codable, CaseIterable, Identifiable {
     case tired
     case weather
     case soreness
+    case sick
+    case injured
     case motivation
     case other
 
@@ -28,8 +30,19 @@ enum MissedWorkoutReason: String, Codable, CaseIterable, Identifiable {
         case .tired: return "Tired / low energy"
         case .weather: return "Weather"
         case .soreness: return "Sore / minor pain"
+        case .sick: return "Sick"
+        case .injured: return "Injured"
         case .motivation: return "Not feeling it"
         case .other: return "Other"
+        }
+    }
+
+    /// The kind of setback this reason opens; nil for everything else.
+    var setbackKind: SetbackKind? {
+        switch self {
+        case .sick: return .illness
+        case .injured: return .injury
+        default: return nil
         }
     }
 
@@ -39,6 +52,8 @@ enum MissedWorkoutReason: String, Codable, CaseIterable, Identifiable {
         case .tired: return "😴"
         case .weather: return "🌧️"
         case .soreness: return "🤕"
+        case .sick: return "🤒"
+        case .injured: return "🩹"
         case .motivation: return "😐"
         case .other: return "✏️"
         }

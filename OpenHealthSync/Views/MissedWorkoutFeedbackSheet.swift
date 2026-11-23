@@ -63,6 +63,7 @@ struct MissedWorkoutFeedbackSheet: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(SetbackStore.self) private var setbackStore
 
     @State private var selectedReason: MissedWorkoutReason?
     @State private var reasonNote = ""
@@ -99,9 +100,9 @@ struct MissedWorkoutFeedbackSheet: View {
                 // Reason picker
                 reasonSection
 
-                // "Other" text field
-                if selectedReason == .other {
-                    TextField("What happened?", text: $reasonNote, axis: .vertical)
+                // Note: asked for with "Other", optional with sick or injured
+                if let reason = selectedReason, reason == .other || reason.setbackKind != nil {
+                    TextField(notePrompt(for: reason), text: $reasonNote, axis: .vertical)
                         .font(.lbBody(14))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(2...4)
@@ -112,6 +113,13 @@ struct MissedWorkoutFeedbackSheet: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
                         )
+                        .padding(.horizontal)
+                }
+
+                if let kind = selectedReason?.setbackKind {
+                    Text(setbackExplanation(for: kind))
+                        .font(.lbBody(12))
+                        .foregroundStyle(LB.textTertiary)
                         .padding(.horizontal)
                 }
 
@@ -209,7 +217,7 @@ struct MissedWorkoutFeedbackSheet: View {
                     ) {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             selectedReason = reason
-                            if reason != .other {
+                            if reason != .other && reason.setbackKind == nil {
                                 reasonNote = ""
                             }
                         }
@@ -335,9 +343,44 @@ struct MissedWorkoutFeedbackSheet: View {
             scheduledDate: workout.scheduledDate,
             reason: reason,
             action: action,
-            reasonNote: reason == .other ? reasonNote : nil,
+            reasonNote: trimmedNote(for: reason),
             newDate: newDate
         )
+    }
+
+    private func trimmedNote(for reason: MissedWorkoutReason) -> String? {
+        guard reason == .other || reason.setbackKind != nil else { return nil }
+        // "Other" has always sent its note, empty or not.
+        if reason == .other { return reasonNote }
+        let trimmed = reasonNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func notePrompt(for reason: MissedWorkoutReason) -> String {
+        switch reason {
+        case .sick: return "Symptoms (optional)"
+        case .injured: return "What hurts? (optional)"
+        default: return "What happened?"
+        }
+    }
+
+    private func setbackExplanation(for kind: SetbackKind) -> String {
+        let day = min(SetbackDay(workout.scheduledDate), .today)
+        if setbackStore.setback(kind: kind, covering: day) != nil
+            || setbackStore.active.contains(where: { $0.kind == kind }) {
+            return "This goes with the \(kind.label.lowercased()) you already logged."
+        }
+        return "This also logs an \(kind.label.lowercased()) starting that day, so your coach knows. You can mark yourself recovered from the Training tab."
+    }
+
+    /// A run lost to sickness or injury opens (or extends) the setback
+    /// itself, so it is on record beyond this one run.
+    private func noteSetbackIfNeeded() {
+        guard let reason = selectedReason, let kind = reason.setbackKind else { return }
+        let note = trimmedNote(for: reason)
+        let date = workout.scheduledDate
+        let store = setbackStore
+        Task { await store.noteSetback(kind: kind, on: date, note: note) }
     }
 
     /// Records a missed-run check-in locally and uploads it fire-and-forget;
@@ -346,6 +389,7 @@ struct MissedWorkoutFeedbackSheet: View {
         guard let feedback = makeFeedback(action: action, newDate: newDate) else { return }
         modelContext.insert(feedback)
         scheduleManager.feedbackSync.syncFeedback(feedback.payload, feedbackId: feedback.id, modelContext: modelContext)
+        noteSetbackIfNeeded()
     }
 
     /// Records a check-in the server has already accepted.
@@ -370,6 +414,7 @@ struct MissedWorkoutFeedbackSheet: View {
                 return
             }
             insertSynced(feedback)
+            noteSetbackIfNeeded()
             Task { await scheduleManager.refreshAfterPlanChange() }
             onComplete(workout)
         }
@@ -402,6 +447,7 @@ struct MissedWorkoutFeedbackSheet: View {
                 }
             }
 
+            noteSetbackIfNeeded()
             let stillOn = await skipToMakeRoom(others)
             if workout.isUpcoming || !others.isEmpty {
                 Task { await scheduleManager.refreshAfterPlanChange() }
@@ -590,4 +636,5 @@ struct FlowLayout: Layout {
         )
     }
     .modelContainer(for: WorkoutFeedback.self, inMemory: true)
+    .environment(SetbackStore(apiClient: WorkoutAPIClient()))
 }

@@ -52,7 +52,8 @@ nonisolated struct DataDomains: OptionSet, Sendable, Hashable {
     /// Workouts, routes, in-workout heart rate, effort. Not optional: without
     /// it there is no training history, which is the whole app.
     static let training  = DataDomains(rawValue: 1 << 0)
-    /// Sleep, resting heart rate, HRV, respiratory rate, blood oxygen.
+    /// Sleep, resting heart rate, HRV, respiratory rate, blood oxygen,
+    /// sleeping wrist temperature.
     static let recovery  = DataDomains(rawValue: 1 << 1)
     /// Weight, body composition, VO₂ max.
     static let body      = DataDomains(rawValue: 1 << 2)
@@ -100,7 +101,7 @@ extension DataDomains {
     var subtitle: String {
         switch self {
         case .training:  return "Runs, routes, heart rate and effort"
-        case .recovery:  return "Sleep, resting heart rate, HRV, breathing and blood oxygen"
+        case .recovery:  return "Sleep, resting heart rate, HRV, breathing, blood oxygen and wrist temperature"
         case .body:      return "Weight, body composition and VO₂ max"
         case .activity:  return "Steps and energy burned across the day"
         case .nutrition: return "Food and drink you log"
@@ -204,6 +205,8 @@ nonisolated extension DataDomains {
                 HKQuantityType(.heartRateVariabilitySDNN),
                 HKQuantityType(.respiratoryRate),
                 HKQuantityType(.oxygenSaturation),
+                // Apple Watch Series 8 and later, one reading per night.
+                HKQuantityType(.appleSleepingWristTemperature),
             ]
         case .body:
             return [

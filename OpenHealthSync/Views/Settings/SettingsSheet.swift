@@ -70,6 +70,17 @@ struct SettingsSheet: View {
                     }
 
                     NavigationLink {
+                        SetbacksView(serverVersion: session.serverVersion)
+                    } label: {
+                        PreferenceRow(
+                            systemImage: "cross.case.fill",
+                            tint: LB.red,
+                            title: "Illness & Injury",
+                            subtitle: "Log it and track your recovery"
+                        )
+                    }
+
+                    NavigationLink {
                         AdvancedSettingsView(onRemoveAllWorkouts: onRemoveAllWorkouts)
                     } label: {
                         PreferenceRow(

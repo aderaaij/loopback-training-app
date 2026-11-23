@@ -13,6 +13,7 @@ struct TrainingCalendarView: View {
     @State private var resolvedSelectedDate: Date = Date()
 
     @AppStorage("weekStartsOnMonday") private var weekStartsOnMonday: Bool = true
+    @Environment(SetbackStore.self) private var setbackStore
 
     private var calendar: Calendar {
         var cal = Calendar.current
@@ -28,6 +29,12 @@ struct TrainingCalendarView: View {
                 if !missedWorkoutDetector.missedWorkouts.isEmpty {
                     MissedWorkoutBanner(detector: missedWorkoutDetector)
                         .padding(.bottom, 8)
+                }
+
+                // Open illness or injury: daily status and "I've recovered".
+                if !setbackStore.active.isEmpty {
+                    VStack(spacing: 8) { SetbackBanner() }
+                        .padding(.bottom, 12)
                 }
 
                 // Plan wrap-up banner — the server marked a plan finishable.

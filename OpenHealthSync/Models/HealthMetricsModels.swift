@@ -28,6 +28,9 @@ struct DailyHealthMetrics: Codable, Sendable {
     let leanBodyMass: Double?               // kg
     let respiratoryRate: Double?            // breaths/min
     let spo2: Double?                       // 0-100 percentage
+    // Sleeping wrist temperature, on the day the athlete woke up. Servers
+    // older than 0.1.25 ignore the field.
+    let wristTemperature: Double?           // °C
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -42,6 +45,7 @@ struct DailyHealthMetrics: Codable, Sendable {
         case leanBodyMass = "lean_body_mass"
         case respiratoryRate = "respiratory_rate"
         case spo2
+        case wristTemperature = "wrist_temperature"
     }
 }
 

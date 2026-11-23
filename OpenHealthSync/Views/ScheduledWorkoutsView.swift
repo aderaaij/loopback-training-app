@@ -16,6 +16,7 @@ struct TrainingTabView: View {
     var workoutManager: WorkoutManager
     var missedWorkoutDetector: MissedWorkoutDetector
     @Environment(\.modelContext) private var modelContext
+    @Environment(SetbackStore.self) private var setbackStore
     @Query private var feedbackEntries: [WorkoutFeedback]
     @State private var viewMode: ViewMode = .timeline
     @State private var selectedDate: Date?
@@ -125,6 +126,16 @@ struct TrainingTabView: View {
                             MissedWorkoutBanner(detector: missedWorkoutDetector)
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
+                        }
+                    }
+
+                    // Open illness or injury: daily status and "I've recovered".
+                    if !setbackStore.active.isEmpty {
+                        Section {
+                            VStack(spacing: 8) { SetbackBanner() }
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
                         }
                     }
 
@@ -320,6 +331,7 @@ struct TrainingTabView: View {
         .navigationTitle("Training")
         .refreshable {
             await scheduleManager.refreshFromServer(modelContext: modelContext)
+            await setbackStore.load()
         }
         .toolbar {
             // Silent while healthy; a warning dot when the server is
