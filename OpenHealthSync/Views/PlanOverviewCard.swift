@@ -125,18 +125,48 @@ struct PlanOverviewCard: View {
 
     // MARK: - Segmented vital progress
 
+    /// One segment per run while they fit. Laid out inside the width on
+    /// offer: as a plain row, the gaps alone gave the bar a minimum width,
+    /// and a plan with enough runs made the card, and with it the whole
+    /// Training screen, wider than the display. Past that point the bar is
+    /// drawn in one piece.
     private var segmentedProgress: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<totalCount, id: \.self) { i in
-                let isDone = i < completedCount
-                let isCurrent = i == completedCount && completedCount < totalCount
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(isDone ? LB.green : (isCurrent ? LB.accent : LB.trackEmpty))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 8)
-                    .shadow(color: isCurrent ? LB.accent.opacity(0.6) : .clear, radius: 5)
+        GeometryReader { geo in
+            let spacing: CGFloat = 4
+            let count = max(totalCount, 1)
+            let segmentWidth = (geo.size.width - spacing * CGFloat(count - 1)) / CGFloat(count)
+
+            if segmentWidth >= 3 {
+                HStack(spacing: spacing) {
+                    ForEach(0..<totalCount, id: \.self) { i in
+                        let isDone = i < completedCount
+                        let isCurrent = i == completedCount && completedCount < totalCount
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(isDone ? LB.green : (isCurrent ? LB.accent : LB.trackEmpty))
+                            .frame(width: segmentWidth)
+                            .shadow(color: isCurrent ? LB.accent.opacity(0.6) : .clear, radius: 5)
+                    }
+                }
+            } else {
+                let done = geo.size.width * completionFraction
+                let marker = min(max(geo.size.width / CGFloat(count), 6), geo.size.width - done)
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(LB.trackEmpty)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(LB.green)
+                        .frame(width: done)
+                    if completedCount < totalCount {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(LB.accent)
+                            .frame(width: marker)
+                            .offset(x: done)
+                            .shadow(color: LB.accent.opacity(0.6), radius: 5)
+                    }
+                }
             }
         }
+        .frame(height: 8)
     }
 
     // MARK: - Current phase row

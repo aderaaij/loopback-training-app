@@ -87,7 +87,12 @@ struct TrainingCalendarView: View {
                 .padding(.top, 4)
             }
             .padding(.bottom)
+            // The page is exactly as wide as the screen, whatever a child
+            // asks for, and has nowhere to go sideways. Only the week strip
+            // scrolls that way, inside its own frame.
+            .containerRelativeFrame(.horizontal)
         }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .contentMargins(.top, 0)
         .background(LB.bg)
         .onAppear {
