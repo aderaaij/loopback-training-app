@@ -28,12 +28,14 @@ struct TrainingCalendarView: View {
                 // Missed workout banner
                 if !missedWorkoutDetector.missedWorkouts.isEmpty {
                     MissedWorkoutBanner(detector: missedWorkoutDetector)
+                        .padding(.horizontal)
                         .padding(.bottom, 8)
                 }
 
                 // Open illness or injury: daily status and "I've recovered".
                 if !setbackStore.active.isEmpty {
                     VStack(spacing: 8) { SetbackBanner() }
+                        .padding(.horizontal)
                         .padding(.bottom, 12)
                 }
 

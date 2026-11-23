@@ -579,26 +579,35 @@ struct FlowLayout: Layout {
         for (index, position) in result.positions.enumerated() {
             subviews[index].place(
                 at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
-                proposal: .unspecified
+                proposal: ProposedViewSize(result.sizes[index])
             )
         }
     }
 
     private struct ArrangementResult {
         var positions: [CGPoint]
+        var sizes: [CGSize]
         var size: CGSize
     }
 
     private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> ArrangementResult {
         let maxWidth = proposal.width ?? .infinity
         var positions: [CGPoint] = []
+        var sizes: [CGSize] = []
         var currentX: CGFloat = 0
         var currentY: CGFloat = 0
         var lineHeight: CGFloat = 0
         var totalWidth: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            var size = subview.sizeThatFits(.unspecified)
+            // An item wider than a whole line gets the line and wraps inside
+            // it. Left at its own width it would make the layout, and with it
+            // the screen it sits on, wider than what was offered.
+            if size.width > maxWidth {
+                size = subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+            }
+            sizes.append(size)
             if currentX + size.width > maxWidth, currentX > 0 {
                 currentX = 0
                 currentY += lineHeight + spacing
@@ -612,6 +621,7 @@ struct FlowLayout: Layout {
 
         return ArrangementResult(
             positions: positions,
+            sizes: sizes,
             size: CGSize(width: totalWidth, height: currentY + lineHeight)
         )
     }
