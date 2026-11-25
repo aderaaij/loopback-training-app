@@ -131,8 +131,12 @@ actor WorkoutAPIClient {
     }
 
     /// `baseURL` in the result is the base the request effectively reached;
-    /// see `effectiveBaseURL(requested:response:)` for why that can differ
-    /// from the one passed in.
+    /// see `redirect(requested:path:response:)` for why that can differ from
+    /// the one passed in.
+    ///
+    /// A 401 that comes back from another address than the one asked is not
+    /// a dead session either: it throws `.redirected` and leaves the session
+    /// alone, whatever `signalsUnauthorized` says.
     @discardableResult
     private func performReachingBase(
         _ method: String,
@@ -187,8 +191,8 @@ actor WorkoutAPIClient {
         }
         var usedBase = first
 
-        let data: Data
-        let response: URLResponse
+        var data: Data
+        var response: URLResponse
         do {
             do {
                 (data, response) = try await Self.session.data(for: makeRequest(on: first))
@@ -206,11 +210,69 @@ actor WorkoutAPIClient {
             throw error
         }
 
-        guard let http = response as? HTTPURLResponse else {
+        guard var http = response as? HTTPURLResponse else {
             Self.reportStatus(.connectionError)
             throw WorkoutAPIError.invalidResponse
         }
+
+        // URLSession follows redirects but drops `Authorization` when one
+        // leaves the origin, so what comes back from the far side says
+        // nothing about the session.
+        var redirect = Self.redirect(requested: usedBase, path: path, response: http)
+
+        // A configured http:// address that the same host now answers over
+        // https (the fallback URL, or a proxy that started redirecting after
+        // sign-in): use the https address from here on, and send this request
+        // again with its header unless it got through anyway.
+        if overrideURL == nil, case .upgraded(let secureBase) = redirect {
+            AppLog.sync.info("\(usedBase.absoluteString, privacy: .public) redirects to https; using \(secureBase.absoluteString, privacy: .public) from now on")
+            adopt(secureBase, inPlaceOf: usedBase)
+            usedBase = secureBase
+            redirect = .none
+            if authenticated, !(200...299).contains(http.statusCode) {
+                do {
+                    (data, response) = try await Self.session.data(for: makeRequest(on: secureBase))
+                } catch {
+                    Self.reportStatus(.connectionError)
+                    throw error
+                }
+                guard let retried = response as? HTTPURLResponse else {
+                    Self.reportStatus(.connectionError)
+                    throw WorkoutAPIError.invalidResponse
+                }
+                http = retried
+                redirect = Self.redirect(requested: secureBase, path: path, response: http)
+            }
+        }
+
         let code = http.statusCode
+        if case .elsewhere(let origin, let matchingBase) = redirect {
+            // Signing in: an address that hands off to another host is
+            // refused before a password or token goes to it. Only when the
+            // redirect kept the path is there an address to suggest; a jump
+            // to some other page (a proxy's login wall) falls through to the
+            // usual errors.
+            if overrideURL != nil {
+                if let matchingBase { throw WorkoutAPIError.redirected(to: matchingBase) }
+            } else {
+                // Signed in: the route is what is wrong, whatever this one
+                // request got. The health check needs no header and succeeds
+                // over there, which must not read as "Connected".
+                let target = matchingBase ?? origin
+                Self.reportStatus(.redirected(to: Self.displayString(target)), viaFallback: usedAlternative)
+                // A 401 is the far side missing the dropped header, not a
+                // dead session. Signing out would not help, and the same
+                // address would end the next session the same way.
+                if code == 401, authenticated {
+                    throw WorkoutAPIError.redirected(to: target)
+                }
+                if (200...299).contains(code) || extraOK.contains(code) {
+                    return (data, code, usedBase)
+                }
+                throw WorkoutAPIError.serverError(code)
+            }
+        }
+
         // Any HTTP response proves the server is reachable; only a genuine
         // dead session (not a candidate-credential probe) downgrades to
         // authenticationError.
@@ -219,13 +281,29 @@ actor WorkoutAPIClient {
             viaFallback: usedAlternative
         )
         if (200...299).contains(code) || extraOK.contains(code) {
-            return (data, code, Self.effectiveBaseURL(requested: usedBase, response: http))
+            if case .upgraded(let secureBase) = redirect {
+                return (data, code, secureBase)
+            }
+            return (data, code, usedBase)
         }
         if code == 401, signalsUnauthorized {
             NotificationCenter.default.post(name: .trainingAPIUnauthorized, object: nil)
             throw WorkoutAPIError.unauthorized
         }
         throw WorkoutAPIError.serverError(code)
+    }
+
+    /// Replaces a configured address with the https one its host redirects
+    /// to, and tells the session so the change is stored and reaches the
+    /// other client.
+    private func adopt(_ secureBase: URL, inPlaceOf old: URL) {
+        if baseURL == old { baseURL = secureBase }
+        if alternativeURL == old { alternativeURL = secureBase }
+        NotificationCenter.default.post(
+            name: .trainingAPIServerURLUpgraded,
+            object: nil,
+            userInfo: [ServerURLUpgrade.fromKey: old, ServerURLUpgrade.toKey: secureBase]
+        )
     }
 
     /// Transport failures that can plausibly be route-specific — a hostname
@@ -241,28 +319,69 @@ actor WorkoutAPIClient {
         }
     }
 
-    /// The base URL a request effectively reached. A reverse proxy answers an
-    /// http:// base with a redirect to https (POST /api/auth/login → 308, GETs
-    /// → 301); URLSession follows it but drops `Authorization` when the scheme
-    /// changes, so later authenticated requests would hit https with no token
-    /// and 401. When the final response stayed on the same host but upgraded
-    /// http→https, report the base rebuilt as https (keeping its host and path
-    /// prefix, with the scheme and port coming from the redirect) so the
-    /// session can adopt it up front. A redirect to a different host is left
-    /// alone.
-    private nonisolated static func effectiveBaseURL(requested: URL, response: URLResponse) -> URL {
-        guard let http = response as? HTTPURLResponse,
-              let finalURL = http.url,
-              let finalHost = finalURL.host, let requestedHost = requested.host,
-              finalHost.caseInsensitiveCompare(requestedHost) == .orderedSame,
-              requested.scheme == "http",
-              finalURL.scheme == "https",
-              var components = URLComponents(url: requested, resolvingAgainstBaseURL: false) else {
-            return requested
+    /// Where the answer to a request came from, compared with the base it
+    /// was sent to.
+    private enum Redirect {
+        /// From the origin that was asked (redirects within it included).
+        case none
+        /// From the same host over https, after asking over http. Carries the
+        /// base rebuilt as https: its host and path prefix, with the scheme
+        /// and port coming from the redirect.
+        case upgraded(URL)
+        /// From another host, or over another scheme or port that is not
+        /// that upgrade. `matchingBase` is the base to use over there when
+        /// the redirect kept the request's path, nil when it led to some
+        /// other page.
+        case elsewhere(origin: URL, matchingBase: URL?)
+    }
+
+    /// A reverse proxy answers an http:// base with a redirect to https
+    /// (POST /api/auth/login → 308, GETs → 301), and some send a bare domain
+    /// on to `www.`. URLSession follows both but drops `Authorization` on the
+    /// way, so authenticated requests arrive with no token and get a 401.
+    /// The same-host http→https case is safe to adopt as the new base; any
+    /// other change of origin is for the athlete to confirm by entering it.
+    private nonisolated static func redirect(requested base: URL, path: String, response: HTTPURLResponse) -> Redirect {
+        guard let finalURL = response.url,
+              let finalHost = finalURL.host, let baseHost = base.host,
+              let finalScheme = finalURL.scheme?.lowercased(),
+              let baseScheme = base.scheme?.lowercased() else {
+            return .none
         }
-        components.scheme = "https"
-        components.port = finalURL.port
-        return components.url ?? requested
+        func port(_ url: URL, _ scheme: String) -> Int {
+            url.port ?? (scheme == "https" ? 443 : 80)
+        }
+        let sameHost = finalHost.caseInsensitiveCompare(baseHost) == .orderedSame
+        if sameHost, finalScheme == baseScheme, port(finalURL, finalScheme) == port(base, baseScheme) {
+            return .none
+        }
+        if sameHost, baseScheme == "http", finalScheme == "https",
+           var components = URLComponents(url: base, resolvingAgainstBaseURL: false) {
+            components.scheme = "https"
+            components.port = finalURL.port
+            if let secureBase = components.url { return .upgraded(secureBase) }
+        }
+
+        guard var components = URLComponents(url: finalURL, resolvingAgainstBaseURL: false) else {
+            return .none
+        }
+        components.query = nil
+        components.fragment = nil
+        var matchingBase: URL?
+        let suffix = "/" + path
+        if components.path.hasSuffix(suffix) {
+            components.path.removeLast(suffix.count)
+            matchingBase = components.url
+        }
+        components.path = ""
+        guard let origin = components.url else { return .none }
+        return .elsewhere(origin: origin, matchingBase: matchingBase)
+    }
+
+    /// An address the way the athlete would type it: no trailing slash.
+    nonisolated static func displayString(_ url: URL) -> String {
+        let text = url.absoluteString
+        return text.hasSuffix("/") ? String(text.dropLast()) : text
     }
 
     /// Fire-and-forget hop to the main actor so publishing never delays a request.
@@ -857,6 +976,17 @@ extension Notification.Name {
     /// Posted by the API client when an authenticated request returns 401,
     /// signalling the session is no longer valid and the app should sign out.
     nonisolated static let trainingAPIUnauthorized = Notification.Name("trainingAPIUnauthorized")
+
+    /// Posted by the API client when a configured http:// address turned out
+    /// to be answered over https by the same host and the client switched to
+    /// it. `userInfo` carries both addresses under the `ServerURLUpgrade`
+    /// keys, so the session can store the new one.
+    nonisolated static let trainingAPIServerURLUpgraded = Notification.Name("trainingAPIServerURLUpgraded")
+}
+
+nonisolated enum ServerURLUpgrade {
+    static let fromKey = "from"
+    static let toKey = "to"
 }
 
 enum WorkoutAPIError: LocalizedError {
@@ -869,6 +999,9 @@ enum WorkoutAPIError: LocalizedError {
     case planNotActive
     case notLoopbackServer(service: String)
     case databaseUnavailable
+    /// The address hands requests off to another one, and the sign-in does
+    /// not travel with them. Carries the address that answered.
+    case redirected(to: URL)
 
     var errorDescription: String? {
         switch self {
@@ -880,6 +1013,8 @@ enum WorkoutAPIError: LocalizedError {
             return "That address isn't a Loopback server."
         case .databaseUnavailable:
             return "The server is reachable but its database is unavailable. Try again shortly."
+        case .redirected(let target):
+            return "This address redirects to \(WorkoutAPIClient.displayString(target)). Use that address instead."
         case .unauthorized:
             return "Your session has expired. Please sign in again."
         case .invalidCredentials:

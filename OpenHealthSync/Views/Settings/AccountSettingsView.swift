@@ -38,6 +38,7 @@ struct AccountSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 ServerStatusRow()
+                ServerRedirectNote()
                 if !session.serverURL.isEmpty {
                     HStack {
                         Text("Server")
