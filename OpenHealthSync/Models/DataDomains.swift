@@ -104,7 +104,7 @@ extension DataDomains {
         case .recovery:  return "Sleep, resting heart rate, HRV, breathing, blood oxygen and wrist temperature"
         case .body:      return "Weight, body composition and VO₂ max"
         case .activity:  return "Steps and energy burned across the day"
-        case .nutrition: return "Food and drink you log"
+        case .nutrition: return "Food and drink you log, and what you take on a run"
         default:         return ""
         }
     }

@@ -239,6 +239,9 @@ struct WorkoutDetailView: View {
     /// The pair on this workout; nil hides the Shoes card.
     @State private var workoutShoe: WorkoutShoe?
     @Environment(ShoeStore.self) private var shoeStore
+    /// What was taken on this workout; nil hides the Fuelling card.
+    @State private var workoutFuel: WorkoutFuel?
+    @Environment(FuelStore.self) private var fuelStore
     @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @State private var loading = true
     @State private var pickingSession = false
@@ -275,6 +278,10 @@ struct WorkoutDetailView: View {
                     WorkoutShoeSection(workoutId: summary.id, initial: workoutShoe)
                 }
 
+                if let workoutFuel {
+                    WorkoutFuelSection(workoutId: summary.id, initial: workoutFuel)
+                }
+
                 extractionCard
             }
             .padding(18)
@@ -299,6 +306,12 @@ struct WorkoutDetailView: View {
                 activityType: summary.activityType,
                 store: shoeStore
             )
+            // The coach reads fuelling under Nutrition, so the card is for
+            // athletes who share that. Nil too when the workout isn't on the
+            // server yet or the server predates fuelling.
+            if DataConsent.current.contains(.nutrition) {
+                workoutFuel = await fuelStore.workoutFuel(workoutId: summary.id)
+            }
         }
     }
 
