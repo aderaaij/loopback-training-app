@@ -41,6 +41,15 @@ struct PlansListView: View {
         }
         .lbList()
         .navigationTitle("Plans")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    PaceCalculatorView()
+                } label: {
+                    Label("Pace calculator", systemImage: "stopwatch")
+                }
+            }
+        }
         .task {
             if scheduleManager.allPlans.isEmpty {
                 await scheduleManager.loadAllPlans()
