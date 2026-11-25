@@ -250,6 +250,7 @@ struct LoginView: View {
             case .rateLimited: return "Too many attempts. Wait a minute and try again."
             case .notLoopbackServer: return "That address isn't a Loopback server."
             case .databaseUnavailable: return "Server reached, but its database is down. Try again shortly."
+            case .redirected: return apiError.errorDescription ?? "This address redirects to another one."
             case .serverError(let code) where code == 401 || code == 403:
                 return "Incorrect username or password."
             default: break

@@ -19,6 +19,11 @@ enum ServerStatus: Equatable {
     case connectionError
     /// The last authenticated request returned 401 — the session is dead.
     case authenticationError
+    /// The last request was answered from another address than the one it
+    /// was sent to (carried here the way it would be typed). Signed-in
+    /// requests are refused over there, because the sign-in does not travel
+    /// with a redirect. The session is fine; the address is not.
+    case redirected(to: String)
 }
 
 @Observable
@@ -49,7 +54,7 @@ extension ServerStatus {
         case .unknown: LB.textMuted
         case .connected: LB.green
         case .connectionError: LB.red
-        case .authenticationError: LB.amber
+        case .authenticationError, .redirected: LB.amber
         }
     }
 
@@ -59,6 +64,7 @@ extension ServerStatus {
         case .connected: "Connected"
         case .connectionError: "Can't reach server"
         case .authenticationError: "Authentication failed"
+        case .redirected: "Address redirects"
         }
     }
 }
@@ -91,8 +97,28 @@ struct ServerStatusRow: View {
     }
 }
 
+/// Says which address redirects where and what to change, while the status
+/// is `.redirected`; nothing otherwise.
+struct ServerRedirectNote: View {
+    private var monitor = ServerStatusMonitor.shared
+
+    var body: some View {
+        if case .redirected(let target) = monitor.status {
+            Label(
+                monitor.viaFallback
+                    ? "The fallback URL redirects to \(target), and your sign-in doesn't travel with a redirect. Change it under Settings → Sync."
+                    : "The server address redirects to \(target), and your sign-in doesn't travel with a redirect. Sign out, then sign in with that address.",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(LB.amber)
+        }
+    }
+}
+
 /// Toolbar indicator that stays invisible while everything is fine and shows
-/// a warning dot when the server is unreachable or the session died.
+/// a warning dot when the server is unreachable, the session died, or the
+/// address redirects.
 struct ServerStatusToolbarDot: View {
     private var monitor = ServerStatusMonitor.shared
 
@@ -100,7 +126,7 @@ struct ServerStatusToolbarDot: View {
         switch monitor.status {
         case .unknown, .connected:
             EmptyView()
-        case .connectionError, .authenticationError:
+        case .connectionError, .authenticationError, .redirected:
             ServerStatusDot(status: monitor.status)
         }
     }

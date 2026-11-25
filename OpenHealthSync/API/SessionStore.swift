@@ -63,6 +63,17 @@ final class SessionStore {
         if isAuthenticated {
             defaults.set(true, forKey: Self.onboardedKey)
         }
+
+        // Lives as long as the app, so the observer is never removed.
+        NotificationCenter.default.addObserver(
+            forName: .trainingAPIServerURLUpgraded, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let old = note.userInfo?[ServerURLUpgrade.fromKey] as? URL,
+                  let secure = note.userInfo?[ServerURLUpgrade.toKey] as? URL else { return }
+            Task { @MainActor in
+                await self?.adoptUpgradedURL(secure, inPlaceOf: old)
+            }
+        }
     }
 
     /// Whether we have a saved display name to show ("Signed in as …").
@@ -95,6 +106,10 @@ final class SessionStore {
             // Unreachable — nothing was learned about the server, so the last
             // known version stays.
             throw error
+        } catch WorkoutAPIError.redirected(let target) {
+            // Another host answered. Signing in here would work and then
+            // fail on the next request, so stop and name the address.
+            throw WorkoutAPIError.redirected(to: target)
         } catch {
             // The server answered, but not with a health payload (pre-0.1.0
             // server or a non-JSON response). Don't block on it — clear the
@@ -272,6 +287,28 @@ final class SessionStore {
             alternativeURL: alternative?.absoluteString,
             apiKey: token
         )
+    }
+
+    /// A request found a stored http:// address answered over https by the
+    /// same host, and the client that sent it has switched. Stores the https
+    /// address in its place (server URL, fallback URL, or both) and hands it
+    /// to the other client, so the redirect is paid for once rather than on
+    /// every launch.
+    private func adoptUpgradedURL(_ secure: URL, inPlaceOf old: URL) async {
+        guard isAuthenticated else { return }
+        let defaults = UserDefaults.standard
+        var changed = false
+        if URL(string: serverURL) == old {
+            defaults.set(secure.absoluteString, forKey: Self.baseURLKey)
+            serverURL = secure.absoluteString
+            changed = true
+        }
+        if Self.storedAlternativeURL == old {
+            defaults.set(secure.absoluteString, forKey: Self.alternativeURLKey)
+            changed = true
+        }
+        guard changed else { return }
+        await configureClients(serverURL: serverURL, token: Self.resolveCredentials().token)
     }
 
     /// Re-pushes the current configuration after the Settings fallback-URL
