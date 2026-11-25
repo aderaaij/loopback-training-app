@@ -18,6 +18,9 @@ struct ScheduledWorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var changingPlans: MissedWorkoutInfo?
+    /// The session's fuelling plan; nil hides the card.
+    @State private var sessionFuel: SessionFuel?
+    @Environment(FuelStore.self) private var fuelStore
 
     var body: some View {
         ScrollView {
@@ -37,11 +40,22 @@ struct ScheduledWorkoutDetailView: View {
                     unavailableSection(text: "Workout details unavailable")
                 }
 
+                if let sessionFuel {
+                    SessionFuelSection(sessionId: scheduled.plan.id, initial: sessionFuel)
+                }
+
                 if let scheduledDate, isUpcoming {
                     changePlansButton(scheduledDate: scheduledDate)
                 }
             }
             .padding(18)
+        }
+        .task {
+            // For athletes who share Nutrition; nil too when the server
+            // doesn't know this session or predates fuelling.
+            if DataConsent.current.contains(.nutrition) {
+                sessionFuel = await fuelStore.sessionFuel(sessionId: scheduled.plan.id)
+            }
         }
         .background(LB.bg)
         .navigationTitle(workoutName)

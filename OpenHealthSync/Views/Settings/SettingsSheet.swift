@@ -17,6 +17,12 @@ struct SettingsSheet: View {
     let onSignOut: () -> Void
     let onRemoveAllWorkouts: () async -> Void
 
+    @AppStorage(DataConsent.appStorageKey) private var domainsRaw: Int = DataDomains.required.rawValue
+
+    private var sharesNutrition: Bool {
+        DataDomains(rawValue: domainsRaw).contains(.nutrition)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -67,6 +73,21 @@ struct SettingsSheet: View {
                             title: "Shoes",
                             subtitle: "Mileage & default pair"
                         )
+                    }
+
+                    // Fuelling is read by the coach under Nutrition, so it
+                    // is offered to those who share that.
+                    if sharesNutrition {
+                        NavigationLink {
+                            FuelProductsView(serverVersion: session.serverVersion)
+                        } label: {
+                            PreferenceRow(
+                                systemImage: "waterbottle.fill",
+                                tint: LB.green,
+                                title: "Fuelling",
+                                subtitle: "Drinks & gels for your runs"
+                            )
+                        }
                     }
 
                     NavigationLink {

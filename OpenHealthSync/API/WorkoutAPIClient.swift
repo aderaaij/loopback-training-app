@@ -669,6 +669,78 @@ actor WorkoutAPIClient {
         ] as [String: Any])
     }
 
+    // MARK: - Fuelling (server 0.1.27+)
+
+    func fetchFuelProducts() async throws -> [FuelProduct] {
+        try await request("GET", "api/fuel/products")
+    }
+
+    func createFuelProduct(_ draft: FuelProductDraft) async throws -> FuelProduct {
+        try await request("POST", "api/fuel/products", body: Self.fuelProductBody(draft))
+    }
+
+    /// Replaces everything the athlete can edit on a product.
+    func updateFuelProduct(id: UUID, draft: FuelProductDraft) async throws -> FuelProduct {
+        try await request("PATCH", "api/fuel/products/\(id.uuidString)", body: Self.fuelProductBody(draft))
+    }
+
+    func deleteFuelProduct(id: UUID) async throws {
+        try await perform("DELETE", "api/fuel/products/\(id.uuidString)")
+    }
+
+    /// What was taken on a workout, next to what was planned for it. A 404
+    /// (workout not on the server, or a server without fuelling) returns nil.
+    func fetchWorkoutFuel(workoutId: UUID) async throws -> WorkoutFuel? {
+        let (data, status) = try await perform(
+            "GET", "api/workouts/\(workoutId.uuidString)/fuel",
+            accepting: [404]
+        )
+        if status == 404 { return nil }
+        return try Self.decoder.decode(WorkoutFuel.self, from: data)
+    }
+
+    /// Replaces a workout's fuelling log; an empty list clears it.
+    func setWorkoutFuel(workoutId: UUID, entries: [FuelEntryDraft]) async throws -> WorkoutFuel {
+        try await request(
+            "PUT", "api/workouts/\(workoutId.uuidString)/fuel",
+            body: Self.fuelEntriesBody(entries)
+        )
+    }
+
+    /// The fuelling plan on a planned session; nil on a 404, as above.
+    func fetchSessionFuel(sessionId: UUID) async throws -> SessionFuel? {
+        let (data, status) = try await perform(
+            "GET", "api/workouts/queue/\(sessionId.uuidString)/fuel",
+            accepting: [404]
+        )
+        if status == 404 { return nil }
+        return try Self.decoder.decode(SessionFuel.self, from: data)
+    }
+
+    /// Replaces a session's fuelling plan; an empty list clears it.
+    func setSessionFuel(sessionId: UUID, entries: [FuelEntryDraft]) async throws -> SessionFuel {
+        try await request(
+            "PUT", "api/workouts/queue/\(sessionId.uuidString)/fuel",
+            body: Self.fuelEntriesBody(entries)
+        )
+    }
+
+    /// Figures left empty go out as explicit nulls, which is what clears
+    /// them on a change; Codable's synthesized encoding would drop them.
+    private static func fuelProductBody(_ draft: FuelProductDraft) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "name": draft.name,
+            "kind": draft.kind.rawValue,
+            "volumeMl": draft.volumeMl ?? NSNull(),
+            "carbsG": draft.carbsG ?? NSNull(),
+            "caffeineMg": draft.caffeineMg ?? NSNull(),
+        ] as [String: Any])
+    }
+
+    private static func fuelEntriesBody(_ entries: [FuelEntryDraft]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: ["entries": entries.map(\.json)])
+    }
+
     // MARK: - Setbacks (server 0.1.25+)
 
     func fetchSetbacks() async throws -> [Setback] {
