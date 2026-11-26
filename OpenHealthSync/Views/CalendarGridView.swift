@@ -35,14 +35,9 @@ struct WeekStripView: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
-            Text(displayedMonth, format: .dateTime.month(.wide).year())
-                .font(.lbBody(14, .semibold))
-                .tracking(0.4)
-                .textCase(.uppercase)
-                .foregroundStyle(LB.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
+        VStack(spacing: LB.Space.sm) {
+            LBSectionHeader(title: displayedMonth.formatted(.dateTime.month(.wide).year()))
+                .lbScreenEdge()
                 .animation(.none, value: displayedMonth)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -66,7 +61,7 @@ struct WeekStripView: View {
     // MARK: - Week Row
 
     private func weekRow(for weekStart: Date) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: LB.Space.sm) {
             ForEach(daysInWeek(from: weekStart), id: \.self) { date in
                 WeekDayCell(
                     date: date,
@@ -80,6 +75,8 @@ struct WeekStripView: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        // Each week is a full-width page, so the screen edge goes inside it.
+        .lbScreenEdge()
     }
 
     // MARK: - Helpers
@@ -109,20 +106,20 @@ struct WeekDayCell: View {
     let dotCategories: Set<TrainingTimelineItem.DotCategory>
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: LB.Space.sm) {
             Text(date, format: .dateTime.weekday(.abbreviated))
-                .font(.lbBody(12, .semibold))
+                .font(.lbBody(.caption, .semibold))
                 .tracking(0.3)
                 // The label sits above the tile, on the screen background — the
                 // tile's on-accent colour would be invisible here.
                 .foregroundStyle(isSelected ? LB.accent : LB.textTertiary)
 
-            VStack(spacing: 5) {
+            VStack(spacing: LB.Space.xs) {
                 Text("\(Calendar.current.component(.day, from: date))")
-                    .font(.lbDisplay(19, .semibold))
+                    .font(.lbDisplay(.headline, .semibold))
                     .foregroundStyle(isSelected ? LB.bg : LB.textPrimary)
 
-                HStack(spacing: 3) {
+                HStack(spacing: LB.Space.xs) {
                     if dotCategories.contains(.upcomingPlan) {
                         Circle().fill(LB.blue).frame(width: 5, height: 5)
                     }
@@ -140,16 +137,17 @@ struct WeekDayCell: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 60)
+            // Only the selected day and today are drawn as shapes. Seven
+            // boxed days read as seven buttons of equal weight.
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isSelected ? LB.accent : LB.surfaceAlt)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
+                    .fill(isSelected ? LB.accent : .clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(isToday && !isSelected ? LB.accent : LB.line,
-                                  lineWidth: isToday && !isSelected ? 1.5 : 1)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
+                    .strokeBorder(isToday && !isSelected ? LB.accent : .clear, lineWidth: 1.5)
             )
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 4)
     }
 }

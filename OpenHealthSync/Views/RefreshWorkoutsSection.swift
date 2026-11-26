@@ -23,11 +23,11 @@ struct RefreshWorkoutsContent: View {
         .disabled(isBusy)
 
         if isBusy {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 ProgressView(value: syncProgress, total: 1.0)
                     .tint(.accentColor)
                 Text(syncLabel)
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(.secondary)
             }
         }
@@ -47,7 +47,7 @@ struct RefreshWorkoutsContent: View {
                     .foregroundStyle(.red)
                 Text(message)
                     .foregroundStyle(.secondary)
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
             }
         }
     }
@@ -92,7 +92,7 @@ struct RefreshWorkoutsSection: View {
     var scheduleManager: WorkoutScheduleManager
 
     var body: some View {
-        Section {
+        LBSection {
             RefreshWorkoutsContent(scheduleManager: scheduleManager)
         }
     }

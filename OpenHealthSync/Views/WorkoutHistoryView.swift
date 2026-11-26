@@ -39,27 +39,26 @@ struct WorkoutHistoryView: View {
         let months = Self.months(from: shown)
 
         List {
-            Section {
+            LBSection(bare: true) {
                 activityChips(Self.activityOptions(from: inYear), total: inYear.count)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } footer: {
                 Text(Self.totalsLine(for: shown, units: units))
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
             }
 
             if shown.isEmpty {
-                Section {
+                LBSection {
                     Text("No workouts match these filters.")
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
                 }
-                .listRowBackground(LB.surface)
             }
 
             ForEach(months) { month in
-                Section {
+                LBSection {
                     ForEach(month.workouts) { summary in
                         NavigationLink {
                             WorkoutDetailView(summary: summary, workoutManager: workoutManager)
@@ -74,12 +73,11 @@ struct WorkoutHistoryView: View {
                     HStack {
                         LBSectionHeader(title: month.start.formatted(.dateTime.month(.wide).year()))
                         Text(Self.totalsLine(for: month.workouts, units: units))
-                            .font(.lbMono(11))
+                            .font(.lbMono(.caption))
                             .foregroundStyle(LB.textTertiary)
                             .fixedSize()
                     }
                 }
-                .listRowBackground(LB.surface)
             }
         }
         .lbList()
@@ -98,7 +96,7 @@ struct WorkoutHistoryView: View {
                     // Text, not an icon: the chosen year has to be readable
                     // at a glance, since it changes what the list covers.
                     Text(year.map(String.init) ?? "All years")
-                        .font(.lbBody(14, .semibold))
+                        .font(.lbBody(.body, .semibold))
                 }
             }
         }
@@ -111,7 +109,7 @@ struct WorkoutHistoryView: View {
 
     private func activityChips(_ options: [ActivityOption], total: Int) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: LB.Space.sm) {
                 chip("All", count: total, isOn: activity == nil) { activity = nil }
                 ForEach(options) { option in
                     chip(option.name, count: option.count, isOn: activity == option.key) {
@@ -119,23 +117,23 @@ struct WorkoutHistoryView: View {
                     }
                 }
             }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 4)
+            .padding(.horizontal, LB.Space.xxs)
+            .padding(.vertical, LB.Space.xs)
         }
     }
 
     private func chip(_ title: String, count: Int, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: LB.Space.sm) {
                 Text(title)
-                    .font(.lbBody(13, .semibold))
+                    .font(.lbBody(.secondary, .semibold))
                 Text(String(count))
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .opacity(0.7)
             }
             .foregroundStyle(isOn ? LB.accent : LB.textSecondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, LB.Space.md)
+            .padding(.vertical, LB.Space.sm)
             .background(
                 Capsule().fill(isOn ? LB.accentTint() : LB.surface)
             )

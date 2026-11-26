@@ -41,7 +41,7 @@ struct ServerURLInput: View {
     @Binding var host: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             Picker("Scheme", selection: $scheme) {
                 ForEach(ServerScheme.allCases) { scheme in
                     Text(scheme.label).tag(scheme)

@@ -123,7 +123,7 @@ struct TrainingTabView: View {
             case .list:
                 List {
                     if !missedWorkoutDetector.missedWorkouts.isEmpty {
-                        Section {
+                        LBSection(bare: true, gap: LB.Space.md) {
                             MissedWorkoutBanner(detector: missedWorkoutDetector)
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
@@ -132,8 +132,8 @@ struct TrainingTabView: View {
 
                     // Open illness or injury: daily status and "I've recovered".
                     if !setbackStore.active.isEmpty {
-                        Section {
-                            VStack(spacing: 8) { SetbackBanner() }
+                        LBSection(bare: true, gap: LB.Space.md) {
+                            VStack(spacing: LB.Space.sm) { SetbackBanner() }
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
@@ -142,7 +142,7 @@ struct TrainingTabView: View {
 
                     // First-run nudge — onboarding seeded a goal but no plan yet.
                     if showOnboardingNudge {
-                        Section {
+                        LBSection(bare: true, gap: LB.Space.md) {
                             OnboardingNudgeCard {
                                 withAnimation { onboardingNudgeDismissed = true }
                             }
@@ -154,7 +154,7 @@ struct TrainingTabView: View {
 
                     // Plan wrap-up banner — the server marked a plan finishable.
                     if let finishable = scheduleManager.finishablePlan {
-                        Section {
+                        LBSection(bare: true, gap: LB.Space.md) {
                             PlanCompletionBanner(plan: finishable, scheduleManager: scheduleManager)
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
@@ -162,11 +162,10 @@ struct TrainingTabView: View {
                         }
                     }
 
-                    // Both hero cards share one section: separate sections
-                    // would put the List's section spacing between them,
-                    // wider than the timeline's 16pt gap.
+                    // Both hero cards share one section, a sibling gap apart,
+                    // as on the timeline.
                     if hasRunPlanCard || scheduleManager.activeStrengthPlan != nil {
-                        Section {
+                        LBSection(bare: true) {
                             if let plan = scheduleManager.activePlan {
                                 PlanOverviewCard(
                                     plan: plan,
@@ -197,7 +196,7 @@ struct TrainingTabView: View {
                                     .opacity(0)
                                     StrengthCycleCardLabel(plan: strengthPlan)
                                 }
-                                .padding(.top, hasRunPlanCard ? 16 : 0)
+                                .padding(.top, hasRunPlanCard ? LB.Space.md : 0)
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
@@ -206,7 +205,7 @@ struct TrainingTabView: View {
                     }
 
                     if !upcomingWorkouts.isEmpty {
-                        Section {
+                        LBSection {
                             ForEach(upcomingWorkouts, id: \.self) { scheduled in
                                 NavigationLink {
                                     ScheduledWorkoutDetailView(scheduled: scheduled)
@@ -231,25 +230,24 @@ struct TrainingTabView: View {
                         } header: {
                             LBSectionHeader(title: "Upcoming Workouts")
                         }
-                        .listRowBackground(LB.surface)
                     }
 
                     // Only misses from the active plan stay inline; older ones
                     // are reachable through the Missed Days stats screen below.
                     if !missedCurrentPlanWorkouts.isEmpty {
-                        Section {
+                        LBSection {
                             ForEach(missedCurrentPlanWorkouts, id: \.self) { scheduled in
                                 if let feedback = existingFeedback(for: scheduled) {
                                     // Already checked in — show reason and action
                                     HStack {
                                         ScheduledWorkoutRow(scheduled: scheduled, isMissed: true)
                                         Spacer()
-                                        VStack(alignment: .trailing, spacing: 2) {
+                                        VStack(alignment: .trailing, spacing: LB.Space.xxs) {
                                             Text("\(feedback.reason.emoji) \(feedback.reason.label)")
-                                                .font(.caption)
+                                                .font(.lbBody(.secondary))
                                                 .foregroundStyle(.secondary)
                                             Text(feedback.action.label)
-                                                .font(.caption.weight(.medium))
+                                                .font(.lbBody(.secondary, .medium))
                                                 .foregroundStyle(LB.amber)
                                         }
                                     }
@@ -270,23 +268,21 @@ struct TrainingTabView: View {
                         } header: {
                             LBSectionHeader(title: "Missed")
                         }
-                        .listRowBackground(LB.surface)
                     }
 
                     // Display-only Hevy sessions — never enqueued to the watch.
                     if !strengthSessions.isEmpty {
-                        Section {
+                        LBSection {
                             ForEach(strengthSessions) { entry in
                                 StrengthSessionRow(entry: entry, showsDate: true)
                             }
                         } header: {
                             LBSectionHeader(title: "Strength Sessions")
                         }
-                        .listRowBackground(LB.surface)
                     }
 
                     if !completedWorkouts.isEmpty {
-                        Section {
+                        LBSection {
                             ForEach(completedWorkouts, id: \.self) { scheduled in
                                 NavigationLink {
                                     ScheduledWorkoutDetailView(scheduled: scheduled)
@@ -297,11 +293,10 @@ struct TrainingTabView: View {
                         } header: {
                             LBSectionHeader(title: "Completed Workouts")
                         }
-                        .listRowBackground(LB.surface)
                     }
 
                     if !pastWorkouts.isEmpty {
-                        Section {
+                        LBSection {
                             ForEach(pastWorkouts.prefix(pastWorkoutsLimit)) { summary in
                                 NavigationLink {
                                     WorkoutDetailView(
@@ -323,14 +318,13 @@ struct TrainingTabView: View {
                                     WorkoutHistoryView(workoutManager: workoutManager)
                                 } label: {
                                     Text("All workouts (\(pastWorkouts.count))")
-                                        .font(.lbBody(13, .medium))
+                                        .font(.lbBody(.secondary, .medium))
                                         .foregroundStyle(LB.accent)
                                 }
                             }
                         } header: {
                             LBSectionHeader(title: "Past Workouts")
                         }
-                        .listRowBackground(LB.surface)
                     }
                 }
                 .lbList()
@@ -434,22 +428,22 @@ struct ScheduledWorkoutRow: View {
     var isMissed: Bool = false
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: isMissed ? "exclamationmark.triangle.fill" : "applewatch")
                 .font(.system(size: 20))
                 .foregroundStyle(isMissed ? LB.amber : LB.blue)
                 .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.surfaceTile)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.surfaceTile)
                 )
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(workoutName)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
                 if let dateString = formattedDate {
                     Text(dateString)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
@@ -461,7 +455,7 @@ struct ScheduledWorkoutRow: View {
                     .foregroundStyle(LB.green)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, LB.Space.xxs)
     }
 
     private var workoutName: String {
@@ -507,21 +501,21 @@ private struct OnboardingNudgeCard: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.system(size: 18))
                 .foregroundStyle(LB.accent)
                 .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.accentTint())
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.accentTint())
                 )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text("Ready when you are")
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
                 Text("Tell your coach you're ready and they'll build your plan.")
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -537,7 +531,7 @@ private struct OnboardingNudgeCard: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(14)
+        .padding(LB.Space.lg)
         .lbCard(border: LB.accent.opacity(0.3))
     }
 }

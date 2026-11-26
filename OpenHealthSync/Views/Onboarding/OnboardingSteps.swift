@@ -26,17 +26,17 @@ extension OnboardingView {
                 withAnimation { model.advance() }
             } label: {
                 Text("Skip")
-                    .font(.lbBody(15, .medium))
+                    .font(.lbBody(.body, .medium))
                     .foregroundStyle(LB.textTertiary)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
+        .padding(.horizontal, LB.Space.lg)
+        .padding(.top, LB.Space.sm)
     }
 
     private var progressDots: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: LB.Space.sm) {
             let count = model.questionSteps.count
             let pos = model.questionPosition ?? 0
             ForEach(0..<count, id: \.self) { i in
@@ -51,29 +51,29 @@ extension OnboardingView {
     private func primaryButton(_ label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.lbBody(16, .semibold))
+                .font(.lbBody(.body, .semibold))
                 .foregroundStyle(LB.bg)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, LB.Space.lg)
                 .background(
-                    RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                         .fill(enabled ? LB.accent : LB.surfaceTile)
                 )
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.55)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 18)
+        .padding(.horizontal, LB.Space.lg)
+        .padding(.bottom, LB.Space.lg)
     }
 
     private func stepTitle(_ text: String) -> some View {
         Text(text)
-            .font(.lbDisplay(27, .semibold))
+            .font(.lbDisplay(.title, .semibold))
             .tracking(-0.4)
             .foregroundStyle(LB.textPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, LB.Space.lg)
     }
 
     // MARK: Step 0 — Welcome + HealthKit
@@ -82,7 +82,7 @@ extension OnboardingView {
         VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: 20) {
+            VStack(spacing: LB.Space.xl) {
                 Image(systemName: "infinity")
                     .font(.system(size: 46, weight: .bold))
                     .foregroundStyle(LB.accent)
@@ -91,26 +91,26 @@ extension OnboardingView {
                     .overlay(Circle().strokeBorder(LB.accent.opacity(0.35), lineWidth: 1))
                     .shadow(color: LB.accent.opacity(0.4), radius: 22)
 
-                VStack(spacing: 10) {
+                VStack(spacing: LB.Space.sm) {
                     Text("Loopback")
-                        .font(.lbDisplay(34, .bold))
+                        .font(.lbDisplay(.largeTitle, .bold))
                         .foregroundStyle(LB.textPrimary)
                     Text("Your training history is your coach's memory.")
-                        .font(.lbBody(16))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, LB.Space.xxl)
                 }
             }
 
             Spacer()
 
-            VStack(spacing: 14) {
+            VStack(spacing: LB.Space.md) {
                 Text("A few questions so your coach knows who it's training. You choose what it gets to see.")
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textTertiary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, LB.Space.xxl)
 
                 // No HealthKit prompt here. The system sheet shows once per
                 // install and can't be re-shown, so it has to come after the
@@ -119,7 +119,7 @@ extension OnboardingView {
                 primaryButton("Get started") {
                     withAnimation { model.advance() }
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, LB.Space.sm)
             }
         }
     }
@@ -131,28 +131,28 @@ extension OnboardingView {
             // No top-bar skip: this step's own "Not now" is the skip, and it
             // records a real choice instead of leaving intent undefined.
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: LB.Space.lg) {
                     progressDots
-                        .padding(.horizontal, 20)
-                        .padding(.top, 22)
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.top, LB.Space.xl)
                     stepTitle("What should your coach see?")
 
                     Text("Everything stays on your own server. Turn any of this off now or later — the coach simply won't be given those tools.")
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, LB.Space.lg)
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: LB.Space.sm) {
                         ForEach(DataDomains.ordered, id: \.rawValue) { domain in
                             domainCard(domain)
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, LB.Space.lg)
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, LB.Space.xl)
             }
 
-            VStack(spacing: 4) {
+            VStack(spacing: LB.Space.xs) {
                 primaryButton("Connect Apple Health") {
                     Task {
                         await model.connectHealthKit()
@@ -167,11 +167,11 @@ extension OnboardingView {
                     }
                 } label: {
                     Text("Not now — just coach my running")
-                        .font(.lbBody(14, .medium))
+                        .font(.lbBody(.body, .medium))
                         .foregroundStyle(LB.textTertiary)
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 18)
+                .padding(.bottom, LB.Space.lg)
             }
         }
     }
@@ -182,8 +182,8 @@ extension OnboardingView {
         return Button {
             withAnimation(.easeInOut(duration: 0.15)) { model.toggleDomain(domain) }
         } label: {
-            HStack(spacing: 13) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+            HStack(spacing: LB.Space.md) {
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .fill(domain.tint.opacity(on ? 0.16 : 0.08))
                     .frame(width: 38, height: 38)
                     .overlay(
@@ -192,12 +192,12 @@ extension OnboardingView {
                             .foregroundStyle(domain.tint.opacity(on ? 1 : 0.45))
                     )
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: LB.Space.xs) {
                     Text(domain.title)
-                        .font(.lbDisplay(16, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text(domain.rationale)
-                        .font(.lbBody(13))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -207,7 +207,7 @@ extension OnboardingView {
 
                 if locked {
                     Text("ALWAYS")
-                        .font(.lbMono(9.5))
+                        .font(.lbMono(.caption))
                         .tracking(0.9)
                         .foregroundStyle(LB.textMuted)
                 } else {
@@ -216,7 +216,7 @@ extension OnboardingView {
                         .foregroundStyle(on ? domain.tint : LB.textMuted)
                 }
             }
-            .padding(16)
+            .padding(LB.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .lbCard(fill: on ? LB.surface : LB.surfaceSunken,
                     border: on ? domain.tint.opacity(0.4) : LB.line)
@@ -231,26 +231,26 @@ extension OnboardingView {
         VStack(spacing: 0) {
             topBar
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: LB.Space.lg) {
                     progressDots
-                        .padding(.horizontal, 20)
-                        .padding(.top, 6)
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.top, LB.Space.sm)
                     stepTitle("What are you working toward?")
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: LB.Space.sm) {
                         ForEach(RunGoal.allCases) { goal in
                             goalCard(goal)
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, LB.Space.lg)
 
                     if let goal = model.goal, goal.isRace {
                         raceDateSection
-                            .padding(.horizontal, 20)
-                            .padding(.top, 4)
+                            .padding(.horizontal, LB.Space.lg)
+                            .padding(.top, LB.Space.xs)
                     }
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, LB.Space.xl)
             }
             primaryButton("Continue", enabled: model.goal != nil) {
                 withAnimation { model.advance() }
@@ -263,14 +263,14 @@ extension OnboardingView {
         return Button {
             withAnimation(.easeInOut(duration: 0.15)) { model.goal = goal }
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: LB.Space.md) {
+                VStack(alignment: .leading, spacing: LB.Space.xs) {
                     Text(goal.label)
-                        .font(.lbDisplay(16, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     if let sub = goal.sublabel {
                         Text(sub)
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textSecondary)
                             .multilineTextAlignment(.leading)
                     }
@@ -280,7 +280,7 @@ extension OnboardingView {
                     .font(.system(size: 21))
                     .foregroundStyle(on ? LB.accent : LB.textMuted)
             }
-            .padding(16)
+            .padding(LB.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .lbCard(fill: on ? LB.accentTint(0.10) : LB.surface,
                     border: on ? LB.accent.opacity(0.5) : LB.line)
@@ -289,10 +289,10 @@ extension OnboardingView {
     }
 
     private var raceDateSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             Toggle(isOn: $model.raceDateEnabled.animation()) {
                 Text("Racing on a specific date?")
-                    .font(.lbBody(15, .medium))
+                    .font(.lbBody(.body, .medium))
                     .foregroundStyle(LB.textPrimary)
             }
             .tint(LB.accent)
@@ -309,8 +309,8 @@ extension OnboardingView {
                 .labelsHidden()
             }
         }
-        .padding(16)
-        .lbCard(fill: LB.surfaceAlt, radius: LB.rInner)
+        .padding(LB.Space.lg)
+        .lbCard(fill: LB.surfaceAlt, radius: LB.Radius.inner)
     }
 
     // MARK: Step B — 30-minute check
@@ -319,13 +319,13 @@ extension OnboardingView {
         VStack(spacing: 0) {
             topBar
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: LB.Space.lg) {
                     progressDots
-                        .padding(.horizontal, 20)
-                        .padding(.top, 6)
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.top, LB.Space.sm)
                     stepTitle("Can you currently run about 30 minutes without stopping?")
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: LB.Space.sm) {
                         ForEach(ThirtyMinAnswer.allCases) { answer in
                             selectRow(
                                 label: answer.label,
@@ -335,9 +335,9 @@ extension OnboardingView {
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, LB.Space.lg)
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, LB.Space.xl)
             }
             primaryButton("Continue") {
                 withAnimation { model.advance() }
@@ -347,16 +347,16 @@ extension OnboardingView {
 
     private func selectRow(label: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: LB.Space.md) {
                 Text(label)
-                    .font(.lbDisplay(16, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
                 Spacer()
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 21))
                     .foregroundStyle(on ? LB.accent : LB.textMuted)
             }
-            .padding(16)
+            .padding(LB.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .lbCard(fill: on ? LB.accentTint(0.10) : LB.surface,
                     border: on ? LB.accent.opacity(0.5) : LB.line)
@@ -370,10 +370,10 @@ extension OnboardingView {
         VStack(spacing: 0) {
             topBar
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: LB.Space.lg) {
                     progressDots
-                        .padding(.horizontal, 20)
-                        .padding(.top, 6)
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.top, LB.Space.sm)
                     stepTitle("Any injuries we should train around?")
 
                     FlowChips(
@@ -382,26 +382,26 @@ extension OnboardingView {
                         onToggle: { model.toggleInjury($0) },
                         onNone: { withAnimation { model.selectNoInjuries() } }
                     )
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, LB.Space.lg)
 
                     if !model.injuries.isEmpty {
                         TextField(
                             "",
                             text: $model.injuryNote,
                             prompt: Text("When, which side, how it resolved (optional)")
-                                .font(.lbBody(14))
+                                .font(.lbBody(.body))
                                 .foregroundStyle(LB.textMuted),
                             axis: .vertical
                         )
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(2...5)
-                        .padding(14)
-                        .lbCard(fill: LB.surfaceAlt, radius: LB.rInner)
-                        .padding(.horizontal, 20)
+                        .padding(LB.Space.lg)
+                        .lbCard(fill: LB.surfaceAlt, radius: LB.Radius.inner)
+                        .padding(.horizontal, LB.Space.lg)
                     }
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, LB.Space.xl)
             }
             primaryButton("Continue") {
                 withAnimation { model.advance() }
@@ -415,22 +415,22 @@ extension OnboardingView {
         VStack(spacing: 0) {
             topBar
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: LB.Space.xl) {
                     progressDots
-                        .padding(.horizontal, 20)
-                        .padding(.top, 6)
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.top, LB.Space.sm)
                     stepTitle("Which days can you usually train?")
 
                     weekdayPills
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, LB.Space.lg)
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: LB.Space.sm) {
                         LBSectionHeader(title: "Preferred time")
                         timePills
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, LB.Space.lg)
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, LB.Space.xl)
             }
             primaryButton("Continue") {
                 withAnimation { model.advance() }
@@ -443,16 +443,16 @@ extension OnboardingView {
     }
 
     private var weekdayPills: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: LB.Space.sm) {
             ForEach(orderedWeekdays, id: \.self) { day in
                 let on = model.selectedDays.contains(day)
                 Text(OnboardingModel.weekdayAbbrev(day))
-                    .font(.lbBody(13, .semibold))
+                    .font(.lbBody(.secondary, .semibold))
                     .foregroundStyle(on ? LB.bg : LB.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .padding(.vertical, LB.Space.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(on ? LB.accent : LB.surfaceTile)
                     )
                     .contentShape(Rectangle())
@@ -464,22 +464,22 @@ extension OnboardingView {
     }
 
     private var timePills: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LB.Space.sm) {
             ForEach(TrainTime.allCases) { time in
                 let on = model.trainTime == time
                 Text(time.label)
-                    .font(.lbBody(13, .medium))
+                    .font(.lbBody(.secondary, .medium))
                     .foregroundStyle(on ? LB.accent : LB.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, LB.Space.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(on ? LB.accentTint() : LB.surfaceTile)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .strokeBorder(on ? LB.accent.opacity(0.5) : .clear, lineWidth: 1)
                     )
                     .contentShape(Rectangle())
@@ -500,47 +500,47 @@ extension OnboardingView {
 
             switch model.writeState {
             case .idle, .writing:
-                VStack(spacing: 18) {
+                VStack(spacing: LB.Space.lg) {
                     ProgressView()
                         .controlSize(.large)
                         .tint(LB.accent)
                     Text("Finishing up…")
-                        .font(.lbDisplay(20, .semibold))
+                        .font(.lbDisplay(.headline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                 }
 
             case .success:
-                VStack(spacing: 16) {
+                VStack(spacing: LB.Space.lg) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 52))
                         .foregroundStyle(LB.green)
                         .shadow(color: LB.green.opacity(0.5), radius: 20)
                     Text("You're all set")
-                        .font(.lbDisplay(26, .semibold))
+                        .font(.lbDisplay(.title, .semibold))
                         .tracking(-0.4)
                         .foregroundStyle(LB.textPrimary)
                     if model.seededGoal {
                         Text("Tell your coach you're ready and they'll build your plan.")
-                            .font(.lbBody(15))
+                            .font(.lbBody(.body))
                             .foregroundStyle(LB.textSecondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                            .padding(.horizontal, LB.Space.xxl)
                     }
                 }
 
             case .failed:
-                VStack(spacing: 14) {
+                VStack(spacing: LB.Space.md) {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.system(size: 40))
                         .foregroundStyle(LB.amber)
                     Text("Couldn't save your answers")
-                        .font(.lbDisplay(20, .semibold))
+                        .font(.lbDisplay(.headline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text("Check your connection and try again, or skip for now.")
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, LB.Space.xxl)
                 }
             }
 
@@ -561,19 +561,19 @@ extension OnboardingView {
         case .success:
             primaryButton("Done") { finish() }
         case .failed:
-            VStack(spacing: 12) {
+            VStack(spacing: LB.Space.md) {
                 primaryButton("Retry") {
                     Task { await model.seedNotes(mondayFirst: weekStartsOnMonday) }
                 }
                 Button { finish() } label: {
                     Text("Skip for now")
-                        .font(.lbBody(15, .medium))
+                        .font(.lbBody(.body, .medium))
                         .foregroundStyle(LB.textSecondary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, LB.Space.md)
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 18)
+                .padding(.bottom, LB.Space.lg)
             }
         case .idle, .writing:
             Color.clear.frame(height: 1)
@@ -595,10 +595,10 @@ private struct FlowChips: View {
     let onToggle: (Injury) -> Void
     let onNone: () -> Void
 
-    private let columns = [GridItem(.adaptive(minimum: 100), spacing: 10)]
+    private let columns = [GridItem(.adaptive(minimum: 100), spacing: LB.Space.sm)]
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: LB.Space.sm) {
             ForEach(Injury.allCases) { injury in
                 chip(text: injury.label, on: injuries.contains(injury)) {
                     withAnimation(.easeInOut(duration: 0.12)) { onToggle(injury) }
@@ -610,18 +610,18 @@ private struct FlowChips: View {
 
     private func chip(text: String, on: Bool, action: @escaping () -> Void) -> some View {
         Text(text)
-            .font(.lbBody(14, .medium))
+            .font(.lbBody(.body, .medium))
             .foregroundStyle(on ? LB.accent : LB.textSecondary)
             .lineLimit(1)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 10)
+            .padding(.vertical, LB.Space.md)
+            .padding(.horizontal, LB.Space.md)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .fill(on ? LB.accentTint() : LB.surfaceTile)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .strokeBorder(on ? LB.accent.opacity(0.5) : .clear, lineWidth: 1)
             )
             .contentShape(Rectangle())

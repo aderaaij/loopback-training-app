@@ -56,19 +56,18 @@ struct LoginView: View {
 
     var body: some View {
         Form {
-            Section {
+            LBSection(bare: true) {
                 header
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
             }
 
-            Section("Server") {
+            LBSection("Server") {
                 ServerURLInput(scheme: $serverScheme, host: $serverHost)
                 handshakeRow
             }
-            .listRowBackground(LB.surface)
 
-            Section("Sign in") {
+            LBSection("Sign in") {
                 TextField("Username", text: $username)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
@@ -84,12 +83,11 @@ struct LoginView: View {
 
                 statusRow
             }
-            .listRowBackground(LB.surface)
 
-            Section {
+            LBSection {
                 DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
                     Text("Paste a token instead of signing in. A token works exactly like a signed-in session.")
-                        .font(.caption)
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(.secondary)
 
                     HStack {
@@ -115,7 +113,6 @@ struct LoginView: View {
                         .disabled(tokenDisabled)
                 }
             }
-            .listRowBackground(LB.surface)
         }
         .lbList()
         .navigationTitle("Sign In")
@@ -138,22 +135,22 @@ struct LoginView: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: LB.Space.md) {
             Image("Logo")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 108)
             Text("Loopback")
-                .font(.lbDisplay(22, .semibold))
+                .font(.lbDisplay(.headline, .semibold))
                 .tracking(-0.4)
                 .foregroundStyle(LB.textPrimary)
             Text("Sign in to your training server to sync workouts, plans, and health metrics.")
-                .font(.subheadline)
+                .font(.lbBody(.body))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, LB.Space.xl)
     }
 
     // MARK: - Actions
@@ -263,7 +260,7 @@ struct LoginView: View {
 
     @ViewBuilder
     private func actionLabel(_ title: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LB.Space.sm) {
             if status == .working {
                 ProgressView()
                     .controlSize(.small)
@@ -277,7 +274,7 @@ struct LoginView: View {
     private var statusRow: some View {
         if case .failed(let message) = status {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(.red)
         }
     }
@@ -292,12 +289,12 @@ struct LoginView: View {
             EmptyView()
         case .verified(let text):
             Label(text, systemImage: "checkmark.seal.fill")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.green)
         case .warning(let compatibility):
             if let message = compatibility.message {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(compatibility.isSevere ? LB.amber : LB.textSecondary)
             }
         }

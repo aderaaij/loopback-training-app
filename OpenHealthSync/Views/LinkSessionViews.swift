@@ -122,7 +122,7 @@ struct SessionPickerSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: LB.Space.sm) {
                     if sessions.isEmpty {
                         LinkPickerEmptyState(
                             icon: "calendar",
@@ -131,9 +131,9 @@ struct SessionPickerSheet: View {
                         )
                     } else {
                         Text("Pick the session this \(workout.activityName.lowercased()) counts for. It doesn't have to be the same day or the same kind of workout.")
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textSecondary)
-                            .padding(.bottom, 6)
+                            .padding(.bottom, LB.Space.sm)
 
                         ForEach(sessions) { session in
                             Button {
@@ -153,12 +153,12 @@ struct SessionPickerSheet: View {
 
                     if let failure {
                         Text(failure)
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.amber)
-                            .padding(.top, 4)
+                            .padding(.top, LB.Space.xs)
                     }
                 }
-                .padding(18)
+                .padding(LB.Space.lg)
                 .disabled(savingId != nil)
             }
             .background(LB.bg)
@@ -230,7 +230,7 @@ struct WorkoutPickerSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: LB.Space.sm) {
                     if workouts.isEmpty {
                         LinkPickerEmptyState(
                             icon: "figure.run",
@@ -239,9 +239,9 @@ struct WorkoutPickerSheet: View {
                         )
                     } else {
                         Text("Pick the workout that counts for \(session.displayName). It doesn't have to be the same day or the same kind of workout.")
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textSecondary)
-                            .padding(.bottom, 6)
+                            .padding(.bottom, LB.Space.sm)
 
                         ForEach(workouts) { workout in
                             Button {
@@ -261,12 +261,12 @@ struct WorkoutPickerSheet: View {
 
                     if let failure {
                         Text(failure)
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.amber)
-                            .padding(.top, 4)
+                            .padding(.top, LB.Space.xs)
                     }
                 }
-                .padding(18)
+                .padding(LB.Space.lg)
                 .disabled(savingId != nil)
             }
             .background(LB.bg)
@@ -332,19 +332,19 @@ private struct LinkPickerRow: View {
     var isSaving = false
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: icon)
                 .font(.system(size: 18))
                 .frame(width: 32)
                 .foregroundStyle(LB.accent)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(title)
-                    .font(.lbBody(15, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(LB.textPrimary)
                     .lineLimit(2)
                 Text(detail.uppercased())
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
             }
 
@@ -356,12 +356,12 @@ private struct LinkPickerRow: View {
                 LBStatusChip(text: chip.text, color: chip.color)
             }
         }
-        .padding(15)
+        .padding(LB.Space.lg)
         .background(
-            RoundedRectangle(cornerRadius: LB.rInner, style: .continuous).fill(LB.optionOff)
+            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.optionOff)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: LB.rInner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
         )
     }
 }
@@ -372,15 +372,15 @@ private struct LinkPickerEmptyState: View {
     let message: String
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: LB.Space.sm) {
             Image(systemName: icon)
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(LB.textMuted)
             Text(title)
-                .font(.lbDisplay(16, .semibold))
+                .font(.lbDisplay(.subheadline, .semibold))
                 .foregroundStyle(LB.textSecondary)
             Text(message)
-                .font(.lbBody(13))
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.textMuted)
                 .multilineTextAlignment(.center)
         }

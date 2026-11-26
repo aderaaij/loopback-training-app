@@ -37,23 +37,23 @@ private struct SetbackCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             Button {
                 showingEdit = true
             } label: {
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: LB.Space.md) {
                     Image(systemName: setback.kind.systemImage)
                         .font(.system(size: 22))
                         .foregroundStyle(LB.red)
                         .frame(width: 26)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: LB.Space.xs) {
                         Text(headline)
-                            .font(.lbDisplay(15, .semibold))
+                            .font(.lbDisplay(.subheadline, .semibold))
                             .foregroundStyle(LB.textPrimary)
                             .multilineTextAlignment(.leading)
                         Text(detail.uppercased())
-                            .font(.lbMono(11))
+                            .font(.lbMono(.caption))
                             .foregroundStyle(LB.textTertiary)
                     }
 
@@ -72,12 +72,12 @@ private struct SetbackCard: View {
                 recoveryNote(recovery)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: LB.Space.sm) {
                 Text("How are you today?")
-                    .font(.lbBody(12, .semibold))
+                    .font(.lbBody(.secondary, .semibold))
                     .foregroundStyle(LB.textSecondary)
 
-                HStack(spacing: 7) {
+                HStack(spacing: LB.Space.sm) {
                     ForEach(SetbackStatus.allCases) { status in
                         statusChip(status)
                     }
@@ -85,7 +85,7 @@ private struct SetbackCard: View {
 
                 if failed {
                     Text("Couldn't save. Check the connection to your server.")
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.amber)
                 }
             }
@@ -94,22 +94,22 @@ private struct SetbackCard: View {
                 showingRecovered = true
             } label: {
                 Text("I've recovered")
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(suggestsRecovered ? LB.bg : LB.textPrimary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, LB.Space.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(suggestsRecovered ? LB.green : LB.optionOff)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .strokeBorder(suggestsRecovered ? Color.clear : LB.line, lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .cardStyle(tint: LB.red)
         .disabled(isSaving)
         .sheet(isPresented: $showingRecovered) {
@@ -129,32 +129,32 @@ private struct SetbackCard: View {
     /// What the recent data says: a green prompt when it looks over, a quiet
     /// line naming what is still off when it doesn't.
     private func recoveryNote(_ recovery: SetbackRecovery) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: LB.Space.sm) {
             Image(systemName: recovery.looksRecovered ? "checkmark.circle.fill" : "waveform.path.ecg")
                 .font(.system(size: 15))
                 .foregroundStyle(recovery.looksRecovered ? LB.green : LB.textTertiary)
-                .padding(.top, 1)
+                .padding(.top, LB.Space.xxs)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 if recovery.looksRecovered {
                     Text("You look recovered. Do you feel it?")
-                        .font(.lbBody(13, .semibold))
+                        .font(.lbBody(.secondary, .semibold))
                         .foregroundStyle(LB.textPrimary)
                 }
                 Text(recovery.summary)
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(11)
+        .padding(LB.Space.md)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                 .fill(recovery.looksRecovered ? LB.green.opacity(0.12) : LB.optionOff)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                 .strokeBorder(recovery.looksRecovered ? LB.green.opacity(0.30) : LB.line, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
@@ -178,18 +178,18 @@ private struct SetbackCard: View {
             record(status)
         } label: {
             Text(status.label)
-                .font(.lbBody(13, .semibold))
+                .font(.lbBody(.secondary, .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .padding(.vertical, LB.Space.md)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                         .fill(isSelected ? LB.accentTint() : LB.optionOff)
                 )
                 .foregroundStyle(isSelected ? LB.accent : LB.textBright)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                         .strokeBorder(isSelected ? LB.accent.opacity(0.45) : LB.line, lineWidth: 1)
                 }
         }
@@ -225,7 +225,7 @@ struct SetbackRecoveredSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                LBSection {
                     DatePicker(
                         "Last day affected",
                         selection: $lastDay,
@@ -237,14 +237,13 @@ struct SetbackRecoveredSheet: View {
                 }
 
                 if let errorMessage {
-                    Section {
+                    LBSection {
                         Text(errorMessage)
-                            .font(.lbBody(14))
+                            .font(.lbBody(.body))
                             .foregroundStyle(LB.red)
                     }
                 }
             }
-            .listRowBackground(LB.surface)
             .lbList()
             .navigationTitle("Recovered")
             .navigationBarTitleDisplayMode(.inline)
@@ -298,7 +297,7 @@ struct SetbacksView: View {
         Form {
             switch store.loadState {
             case .idle, .loading:
-                Section {
+                LBSection {
                     HStack {
                         Spacer()
                         ProgressView()
@@ -306,9 +305,9 @@ struct SetbacksView: View {
                     }
                 }
             case .failed:
-                Section {
+                LBSection {
                     Text(failureMessage)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
                     Button("Try Again") {
                         Task { await store.load() }
@@ -318,7 +317,6 @@ struct SetbacksView: View {
                 loadedSections
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Illness & Injury")
         .navigationBarTitleDisplayMode(.inline)
@@ -344,9 +342,9 @@ struct SetbacksView: View {
     @ViewBuilder
     private var loadedSections: some View {
         if store.setbacks.isEmpty {
-            Section {
+            LBSection {
                 Text("Log it when you're sick or injured. Your coach then knows without being told, holds back the hard sessions, and helps you build back up once you've recovered.")
-                    .font(.lbBody(14))
+                    .font(.lbBody(.body))
                     .foregroundStyle(LB.textSecondary)
                 Button("Log Illness or Injury") { showingAdd = true }
             } footer: {
@@ -354,7 +352,7 @@ struct SetbacksView: View {
             }
         } else {
             if !store.active.isEmpty {
-                Section {
+                LBSection {
                     ForEach(store.active) { setback in
                         NavigationLink {
                             SetbackFormView(setback: setback, isSheet: false)
@@ -369,7 +367,7 @@ struct SetbacksView: View {
                 }
             }
             if !store.past.isEmpty {
-                Section {
+                LBSection {
                     ForEach(store.past) { setback in
                         NavigationLink {
                             SetbackFormView(setback: setback, isSheet: false)
@@ -405,15 +403,15 @@ private struct SetbackRow: View {
     let setback: Setback
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: setback.kind.systemImage)
                 .foregroundStyle(setback.isActive ? LB.red : LB.textTertiary)
                 .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
+                HStack(spacing: LB.Space.sm) {
                     Text(setback.title)
-                        .font(.lbDisplay(15, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(1)
                     if setback.isActive {
@@ -421,11 +419,11 @@ private struct SetbackRow: View {
                     }
                 }
                 Text(dates)
-                    .font(.lbMono(12))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, LB.Space.xs)
     }
 
     private var dates: String {
@@ -467,7 +465,7 @@ struct SetbackFormView: View {
 
     var body: some View {
         Form {
-            Section {
+            LBSection {
                 Picker("Kind", selection: $kind) {
                     ForEach(SetbackKind.allCases) { kind in
                         Text(kind.label).tag(kind)
@@ -480,7 +478,7 @@ struct SetbackFormView: View {
                 }
             }
 
-            Section {
+            LBSection {
                 Picker("How bad", selection: $severity) {
                     ForEach(SetbackSeverity.allCases) { severity in
                         Text(severity.label).tag(severity)
@@ -493,7 +491,7 @@ struct SetbackFormView: View {
                 Text(severity.explanation(for: kind))
             }
 
-            Section {
+            LBSection {
                 DatePicker("First day", selection: $startDate, in: ...Date(), displayedComponents: .date)
                 Toggle("Still going on", isOn: $isOngoing)
                 if !isOngoing {
@@ -506,7 +504,7 @@ struct SetbackFormView: View {
                 }
             }
 
-            Section {
+            LBSection {
                 TextField(kind == .illness ? "Symptoms, anything worth knowing" : "What happened, what hurts", text: $note, axis: .vertical)
                     .lineLimit(2...5)
             } header: {
@@ -514,7 +512,7 @@ struct SetbackFormView: View {
             }
 
             if let setback, !setback.checkins.isEmpty {
-                Section("Day by day") {
+                LBSection("Day by day") {
                     ForEach(setback.checkins.reversed()) { checkin in
                         HStack {
                             Text(checkin.day.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
@@ -522,13 +520,13 @@ struct SetbackFormView: View {
                             Text(checkin.status?.label ?? checkin.statusText.capitalized)
                                 .foregroundStyle(LB.textSecondary)
                         }
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                     }
                 }
             }
 
             if setback != nil {
-                Section {
+                LBSection {
                     Button("Delete", role: .destructive) {
                         showingDeleteConfirmation = true
                     }
@@ -538,14 +536,13 @@ struct SetbackFormView: View {
             }
 
             if let errorMessage {
-                Section {
+                LBSection {
                     Text(errorMessage)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.red)
                 }
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle(setback == nil ? "Log Illness or Injury" : setback?.kind.label ?? "")
         .navigationBarTitleDisplayMode(.inline)

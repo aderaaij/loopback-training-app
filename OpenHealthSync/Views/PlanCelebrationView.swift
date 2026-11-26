@@ -24,23 +24,23 @@ struct PlanCompletionBanner: View {
         Button {
             scheduleManager.presentCelebration(for: plan)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: LB.Space.md) {
                 Image(systemName: "trophy.fill")
                     .font(.system(size: 19))
                     .foregroundStyle(LB.accent)
                     .frame(width: 40, height: 40)
                     .background(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(LB.accentTint())
                     )
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: LB.Space.xxs) {
                     Text("\(plan.name) is wrapped")
-                        .font(.lbDisplay(15, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(1)
                     Text("Tap to celebrate and close it out")
-                        .font(.lbBody(13))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textSecondary)
                 }
 
@@ -50,7 +50,7 @@ struct PlanCompletionBanner: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(LB.textTertiary)
             }
-            .padding(14)
+            .padding(LB.Space.lg)
             .lbCard(border: LB.accent.opacity(0.35))
         }
         .buttonStyle(.plain)
@@ -118,43 +118,43 @@ struct PlanCelebrationSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 trophy
-                    .padding(.top, 36)
-                    .padding(.bottom, 20)
+                    .padding(.top, LB.Space.xxl)
+                    .padding(.bottom, LB.Space.xl)
 
                 Text(isCleanFinish ? "Plan complete!" : "Time to wrap up")
-                    .font(.lbDisplay(26, .semibold))
+                    .font(.lbDisplay(.title, .semibold))
                     .tracking(-0.4)
                     .foregroundStyle(LB.textPrimary)
 
                 Text(plan.name)
-                    .font(.lbBody(15))
+                    .font(.lbBody(.body))
                     .foregroundStyle(LB.textSecondary)
-                    .padding(.top, 4)
+                    .padding(.top, LB.Space.xs)
 
                 statsRow
-                    .padding(.top, 22)
+                    .padding(.top, LB.Space.xl)
 
                 if !conflicted {
                     starRating
-                        .padding(.top, 26)
+                        .padding(.top, LB.Space.xl)
 
                     feedbackField
-                        .padding(.top, 18)
+                        .padding(.top, LB.Space.lg)
                 }
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.lbBody(13))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.amber)
                         .multilineTextAlignment(.center)
-                        .padding(.top, 16)
+                        .padding(.top, LB.Space.lg)
                 }
 
                 buttons
-                    .padding(.top, 26)
-                    .padding(.bottom, 24)
+                    .padding(.top, LB.Space.xl)
+                    .padding(.bottom, LB.Space.xl)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, LB.Space.xl)
         }
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
@@ -176,7 +176,7 @@ struct PlanCelebrationSheet: View {
     }
 
     private var statsRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             if let progress = plan.progress, progress.runsTotal > 0 {
                 statBlock(value: "\(progress.runsCompleted)", label: "Sessions")
                 if progress.runsSkipped > 0 {
@@ -190,28 +190,28 @@ struct PlanCelebrationSheet: View {
     }
 
     private func statBlock(value: String, label: String) -> some View {
-        VStack(spacing: 3) {
+        VStack(spacing: LB.Space.xs) {
             Text(value)
-                .font(.lbMono(24, .semibold))
+                .font(.lbMono(.metric, .semibold))
                 .foregroundStyle(LB.textPrimary)
             Text(label.uppercased())
-                .font(.lbBody(10, .semibold))
+                .font(.lbBody(.caption, .semibold))
                 .tracking(0.5)
                 .foregroundStyle(LB.textTertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .lbCard(fill: LB.surfaceAlt, radius: LB.rInner)
+        .padding(.vertical, LB.Space.md)
+        .lbCard(fill: LB.surfaceAlt, radius: LB.Radius.inner)
     }
 
     private var starRating: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: LB.Space.sm) {
             Text("HOW WAS THIS BLOCK?")
-                .font(.lbBody(11, .semibold))
+                .font(.lbBody(.caption, .semibold))
                 .tracking(0.6)
                 .foregroundStyle(LB.textTertiary)
 
-            HStack(spacing: 12) {
+            HStack(spacing: LB.Space.md) {
                 ForEach(1...5, id: \.self) { star in
                     Button {
                         // Tapping the current rating clears it — both fields
@@ -233,29 +233,29 @@ struct PlanCelebrationSheet: View {
             "",
             text: $feedback,
             prompt: Text("What worked, what didn't? Your coach reads this when shaping the next block.")
-                .font(.lbBody(14))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textMuted),
             axis: .vertical
         )
-        .font(.lbBody(14))
+        .font(.lbBody(.body))
         .foregroundStyle(LB.textPrimary)
         .lineLimit(3...6)
-        .padding(14)
-        .lbCard(fill: LB.surfaceAlt, radius: LB.rInner)
+        .padding(LB.Space.lg)
+        .lbCard(fill: LB.surfaceAlt, radius: LB.Radius.inner)
     }
 
     private var buttons: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: LB.Space.md) {
             if conflicted {
                 Button {
                     dismiss()
                 } label: {
                     Text("Close")
-                        .font(.lbBody(16, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.textPrimary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .lbCard(fill: LB.surfaceTile, radius: LB.rPill)
+                        .padding(.vertical, LB.Space.lg)
+                        .lbCard(fill: LB.surfaceTile, radius: LB.Radius.inner)
                 }
                 .buttonStyle(.plain)
             } else {
@@ -267,14 +267,14 @@ struct PlanCelebrationSheet: View {
                             ProgressView().tint(LB.bg)
                         } else {
                             Text("Complete Plan")
-                                .font(.lbBody(16, .semibold))
+                                .font(.lbBody(.body, .semibold))
                         }
                     }
                     .foregroundStyle(LB.bg)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
+                    .padding(.vertical, LB.Space.lg)
                     .background(
-                        RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(LB.accent)
                     )
                 }
@@ -285,10 +285,10 @@ struct PlanCelebrationSheet: View {
                     dismiss()
                 } label: {
                     Text("Not now")
-                        .font(.lbBody(15, .medium))
+                        .font(.lbBody(.body, .medium))
                         .foregroundStyle(LB.textSecondary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, LB.Space.md)
                 }
                 .buttonStyle(.plain)
                 .disabled(isSubmitting)
@@ -306,17 +306,17 @@ struct PlanCelebrationSheet: View {
                 .font(.system(size: 52))
                 .foregroundStyle(LB.green)
                 .shadow(color: LB.green.opacity(0.5), radius: 20)
-                .padding(.bottom, 20)
+                .padding(.bottom, LB.Space.xl)
 
             Text("That's a wrap")
-                .font(.lbDisplay(26, .semibold))
+                .font(.lbDisplay(.title, .semibold))
                 .tracking(-0.4)
                 .foregroundStyle(LB.textPrimary)
 
             Text("\(plan.name) is in the books.")
-                .font(.lbBody(15))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
-                .padding(.top, 4)
+                .padding(.top, LB.Space.xs)
 
             Group {
                 if let nextPlan {
@@ -325,13 +325,13 @@ struct PlanCelebrationSheet: View {
                     nudgeCard
                 }
             }
-            .padding(.top, 28)
+            .padding(.top, LB.Space.xxl)
 
             if rating > 0 || !feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label("Your feedback is saved for the coach.", systemImage: "checkmark.circle")
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textTertiary)
-                    .padding(.top, 16)
+                    .padding(.top, LB.Space.lg)
             }
 
             Spacer()
@@ -340,54 +340,54 @@ struct PlanCelebrationSheet: View {
                 dismiss()
             } label: {
                 Text("Done")
-                    .font(.lbBody(16, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(LB.bg)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
+                    .padding(.vertical, LB.Space.lg)
                     .background(
-                        RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(LB.accent)
                     )
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 24)
+            .padding(.bottom, LB.Space.xl)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, LB.Space.xl)
     }
 
     private func nextUpCard(_ next: TrainingPlan) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
             Text("NEXT UP")
-                .font(.lbBody(11, .semibold))
+                .font(.lbBody(.caption, .semibold))
                 .tracking(0.6)
                 .foregroundStyle(LB.accent)
             Text(next.name)
-                .font(.lbDisplay(17, .semibold))
+                .font(.lbDisplay(.subheadline, .semibold))
                 .foregroundStyle(LB.textPrimary)
             if let start = next.start {
                 Text(start > Date()
                      ? "Starts \(PlanFormat.medium.string(from: start))"
                      : "Already underway")
-                    .font(.lbMono(12))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(LB.Space.lg)
         .lbCard(fill: LB.surfaceAlt, border: LB.accent.opacity(0.25))
     }
 
     private var nudgeCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
             Label("What's next?", systemImage: "bubble.left.and.bubble.right")
-                .font(.lbBody(14, .semibold))
+                .font(.lbBody(.body, .semibold))
                 .foregroundStyle(LB.textPrimary)
             Text("No \(plan.activityType.lowercased()) plan lined up yet — start a conversation with your coach to shape the next block.")
-                .font(.lbBody(14))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(LB.Space.lg)
         .lbCard(fill: LB.surfaceAlt)
     }
 

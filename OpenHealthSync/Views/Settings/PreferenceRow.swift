@@ -14,8 +14,8 @@ struct PreferenceRow: View {
     var subtitle: String? = nil
 
     var body: some View {
-        HStack(spacing: 13) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+        HStack(spacing: LB.Space.md) {
+            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                 .fill(tint.opacity(0.16))
                 .frame(width: 36, height: 36)
                 .overlay(
@@ -25,20 +25,20 @@ struct PreferenceRow: View {
                 )
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(title)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, LB.Space.xxs)
     }
 }
 

@@ -23,7 +23,7 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Danger Zone") {
+            LBSection("Danger Zone") {
                 Button("Remove All Scheduled Workouts", role: .destructive) {
                     showRemoveAllConfirmation = true
                 }
@@ -47,7 +47,6 @@ struct AdvancedSettingsView: View {
             developerSection
             #endif
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
@@ -57,7 +56,7 @@ struct AdvancedSettingsView: View {
     // MARK: - Network Log (debug builds only)
 
     private var networkLogSection: some View {
-        Section {
+        LBSection {
             NavigationLink("Network Log") {
                 ConsoleView(mode: .network)
                     .closeButtonHidden()
@@ -72,7 +71,7 @@ struct AdvancedSettingsView: View {
     // MARK: - Developer (debug builds only)
 
     private var developerSection: some View {
-        Section {
+        LBSection {
             Toggle("Mark seeded runs as synced", isOn: $markSeededAsSynced)
                 .tint(LB.green)
 
@@ -80,7 +79,7 @@ struct AdvancedSettingsView: View {
                 Task { await seeder.seed(markAsSynced: markSeededAsSynced) }
             } label: {
                 if seeder.isWorking {
-                    HStack(spacing: 8) {
+                    HStack(spacing: LB.Space.sm) {
                         ProgressView().controlSize(.small).tint(LB.accent)
                         Text("Working…")
                     }
@@ -106,7 +105,7 @@ struct AdvancedSettingsView: View {
 
             if let message = seeder.statusMessage {
                 Text(message)
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(.secondary)
             }
         } header: {

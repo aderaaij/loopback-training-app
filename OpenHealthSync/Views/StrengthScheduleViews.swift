@@ -36,29 +36,29 @@ struct StrengthSessionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: "dumbbell.fill")
                 .font(.system(size: 17))
                 .foregroundStyle(LB.violet)
                 .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.surfaceTile)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.surfaceTile)
                 )
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(entry.title)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
-                HStack(spacing: 6) {
+                HStack(spacing: LB.Space.sm) {
                     Text(subtitle)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                     if entry.conflict {
-                        HStack(spacing: 3) {
+                        HStack(spacing: LB.Space.xs) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 9, weight: .semibold))
                             Text("Run day")
-                                .font(.lbBody(11, .medium))
+                                .font(.lbBody(.caption, .medium))
                         }
                         .foregroundStyle(LB.amber)
                     }
@@ -72,7 +72,7 @@ struct StrengthSessionRow: View {
                     .foregroundStyle(LB.green)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, LB.Space.xxs)
     }
 }
 
@@ -101,28 +101,28 @@ struct StrengthCycleCardLabel: View {
     let plan: TrainingPlan
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: LB.Space.md) {
                 Image(systemName: "dumbbell.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(LB.violet)
                     .frame(width: 42, height: 42)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(LB.surfaceTile)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.surfaceTile)
                     )
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: LB.Space.xs) {
                     Text(plan.name)
-                        .font(.lbDisplay(16, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(1)
                     if let cadence = plan.metadata?.schedule?.summary, !cadence.isEmpty {
                         Text(cadence)
-                            .font(.lbBody(12))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textTertiary)
                             .lineLimit(1)
                     } else if let description = plan.description, !description.isEmpty {
                         Text(description)
-                            .font(.lbBody(12))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textTertiary)
                             .lineLimit(1)
                     }
@@ -130,14 +130,14 @@ struct StrengthCycleCardLabel: View {
 
                 Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 5) {
+                VStack(alignment: .trailing, spacing: LB.Space.xs) {
                     horizonChip
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(LB.textMuted)
                 }
         }
-        .padding(14)
+        .padding(LB.Space.lg)
         .lbCard()
     }
 

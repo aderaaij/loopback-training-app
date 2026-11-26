@@ -52,19 +52,19 @@ struct RescheduleDatePicker: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            VStack(spacing: LB.Space.xl) {
                 // Header
-                VStack(spacing: 4) {
+                VStack(spacing: LB.Space.xs) {
                     Text("Reschedule \(workout.displayName)")
-                        .font(.headline)
+                        .font(.lbDisplay(.subheadline, .semibold))
                     Text("Pick a new day")
-                        .font(.subheadline)
+                        .font(.lbBody(.body))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.top)
+                .padding(.top, LB.Space.lg)
 
                 // Date grid — 2 rows of 7 days
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: LB.Space.xs), count: 7), spacing: LB.Space.sm) {
                     ForEach(availableDates, id: \.self) { date in
                         RescheduleDayCell(
                             date: date,
@@ -79,29 +79,29 @@ struct RescheduleDatePicker: View {
                         }
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, LB.Space.lg)
 
                 // Collision warning
                 if let existingWorkouts = workoutsOnDay(selectedDate) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: LB.Space.sm) {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                         Text("You already have \(names(existingWorkouts)) on this day.")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, LB.Space.lg)
+                    .padding(.vertical, LB.Space.sm)
                     .background(Color.orange.opacity(0.08))
-                    .cornerRadius(8)
-                    .padding(.horizontal)
+                    .clipShape(RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous))
+                    .padding(.horizontal, LB.Space.lg)
                 }
 
                 Spacer()
 
                 // Confirm buttons
-                VStack(spacing: 10) {
+                VStack(spacing: LB.Space.sm) {
                     if let existingWorkouts = workoutsOnDay(selectedDate) {
                         confirmButton("Move & skip \(names(existingWorkouts))", skipping: existingWorkouts)
                             .buttonStyle(.borderedProminent)
@@ -113,8 +113,8 @@ struct RescheduleDatePicker: View {
                     }
                 }
                 .controlSize(.large)
-                .padding(.horizontal)
-                .padding(.bottom)
+                .padding(.horizontal, LB.Space.lg)
+                .padding(.bottom, LB.Space.lg)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -132,7 +132,7 @@ struct RescheduleDatePicker: View {
             dismiss()
         } label: {
             Text(title)
-                .font(.body.weight(.medium))
+                .font(.lbBody(.body, .medium))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
@@ -161,13 +161,13 @@ private struct RescheduleDayCell: View {
     let hasWorkout: Bool
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: LB.Space.xxs) {
             Text(date, format: .dateTime.weekday(.narrow))
-                .font(.caption2)
+                .font(.lbBody(.caption))
                 .foregroundStyle(isSelected ? .white : .secondary)
 
             Text("\(Calendar.current.component(.day, from: date))")
-                .font(.subheadline)
+                .font(.lbBody(.body))
                 .fontWeight(isToday ? .bold : .regular)
                 .foregroundStyle(isSelected ? .white : .primary)
 
@@ -182,13 +182,13 @@ private struct RescheduleDayCell: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, LB.Space.sm)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: LB.Radius.inner)
                     .fill(Color.accentColor)
             } else if isToday {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: LB.Radius.inner)
                     .stroke(Color.accentColor, lineWidth: 1.5)
             }
         }

@@ -150,29 +150,29 @@ struct TrendsView: View {
         let previous = totals(forYear: thisYear - 1)
 
         return ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: LB.Space.md) {
                 yearTiles(title: "\(thisYear)", totals: current)
                 if previous.runs > 0 {
                     yearTiles(title: "\(thisYear - 1)", totals: previous)
                 }
                 monthlyCard
                 Text("Trends cover synced workouts only — runs from before the app existed were never uploaded.")
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, LB.Space.xs)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.horizontal, LB.Space.lg)
+            .padding(.vertical, LB.Space.md)
         }
     }
 
     // MARK: - Year tiles
 
     private func yearTiles(title: String, totals: (distance: Double, runs: Int, duration: Double)) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
             LBSectionHeader(title: title)
-            HStack(spacing: 10) {
+            LBTileRow {
                 LBTrendTile(value: formatDistance(units.distanceValue(meters: totals.distance)), label: units.distanceUnit)
                 LBTrendTile(value: "\(totals.runs)", label: "Runs")
                 LBTrendTile(value: formatHours(totals.duration), label: "Time")
@@ -183,11 +183,11 @@ struct TrendsView: View {
     // MARK: - Monthly bars
 
     private var monthlyCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "Monthly distance")
             monthlyBars
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
@@ -197,21 +197,21 @@ struct TrendsView: View {
         let maxDistance = months.map(\.distance).max() ?? 0
         let maxBarHeight: CGFloat = 96
 
-        return HStack(alignment: .bottom, spacing: 6) {
+        return HStack(alignment: .bottom, spacing: LB.Space.xs) {
             ForEach(months, id: \.month) { entry in
-                VStack(spacing: 6) {
+                VStack(spacing: LB.Space.xs) {
                     Text(entry.distance > 0 ? "\(Int(entry.distance.rounded()))" : " ")
-                        .font(.lbMono(9))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
+                    UnevenRoundedRectangle(topLeadingRadius: LB.Radius.bar, topTrailingRadius: LB.Radius.bar)
                         .fill(entry.distance > 0 ? LB.accent : LB.trackEmpty)
                         .frame(height: entry.distance > 0
                                ? max(6, maxBarHeight * CGFloat(entry.distance) / CGFloat(max(maxDistance, 1)))
                                : 3)
                     Text(Self.monthFormatter.string(from: entry.month).uppercased())
-                        .font(.lbMono(9))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
@@ -222,35 +222,35 @@ struct TrendsView: View {
     // MARK: - Error state
 
     private var errorCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: LB.Space.md) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 28))
                 .foregroundStyle(LB.textTertiary)
             Text("Couldn't load trends")
-                .font(.lbDisplay(16, .semibold))
+                .font(.lbDisplay(.subheadline, .semibold))
                 .foregroundStyle(LB.textPrimary)
             Text("Check your connection to the training server and try again.")
-                .font(.lbBody(13))
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 Task { await load() }
             } label: {
                 Text("Retry")
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(LB.accent)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, LB.Space.xl)
+                    .padding(.vertical, LB.Space.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(LB.accentTint())
                     )
             }
             .buttonStyle(.plain)
         }
-        .padding(24)
+        .padding(LB.Space.xl)
         .lbCard()
-        .padding(.horizontal)
+        .padding(.horizontal, LB.Space.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

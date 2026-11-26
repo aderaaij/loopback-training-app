@@ -19,6 +19,7 @@ struct MainTabView: View {
                         workoutManager: workoutManager,
                         missedWorkoutDetector: missedWorkoutDetector
                     )
+                    .lbNavigationBarMargins()
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
@@ -34,6 +35,7 @@ struct MainTabView: View {
             Tab("Plans", systemImage: "calendar.badge.clock") {
                 NavigationStack {
                     PlansListView(scheduleManager: scheduleManager)
+                        .lbNavigationBarMargins()
                 }
             }
 
@@ -44,6 +46,7 @@ struct MainTabView: View {
                         missedWorkoutDetector: missedWorkoutDetector,
                         healthMetricsSyncer: healthMetricsSyncer
                     )
+                    .lbNavigationBarMargins()
                 }
             }
         }

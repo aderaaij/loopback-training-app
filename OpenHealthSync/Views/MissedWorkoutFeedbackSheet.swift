@@ -88,7 +88,7 @@ struct MissedWorkoutFeedbackSheet: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: LB.Space.xl) {
                 // Header
                 headerSection
 
@@ -102,7 +102,7 @@ struct MissedWorkoutFeedbackSheet: View {
                     showWorkoutPicker = true
                 }
                 .disabled(isSaving)
-                .padding(.horizontal)
+                .padding(.horizontal, LB.Space.lg)
 
                 // Reason picker
                 reasonSection
@@ -110,24 +110,24 @@ struct MissedWorkoutFeedbackSheet: View {
                 // Note: asked for with "Other", optional with sick or injured
                 if let reason = selectedReason, reason == .other || reason.setbackKind != nil {
                     TextField(notePrompt(for: reason), text: $reasonNote, axis: .vertical)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(2...4)
-                        .padding(12)
+                        .padding(LB.Space.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(LB.optionOff)
+                            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.optionOff)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
                         )
-                        .padding(.horizontal)
+                        .padding(.horizontal, LB.Space.lg)
                 }
 
                 if let kind = selectedReason?.setbackKind {
                     Text(setbackExplanation(for: kind))
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textTertiary)
-                        .padding(.horizontal)
+                        .padding(.horizontal, LB.Space.lg)
                 }
 
                 // Action buttons
@@ -135,7 +135,7 @@ struct MissedWorkoutFeedbackSheet: View {
                     actionSection
                 }
             }
-            .padding(.vertical)
+            .padding(.vertical, LB.Space.lg)
         }
         .background(LB.bg)
         .scrollContentBackground(.hidden)
@@ -183,40 +183,40 @@ struct MissedWorkoutFeedbackSheet: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
             if totalCount > 1 {
                 Text("\(currentIndex) of \(totalCount)")
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
-                    .padding(.horizontal)
+                    .padding(.horizontal, LB.Space.lg)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: LB.Space.md) {
                 Image(systemName: workout.isUpcoming ? "calendar.badge.clock" : "exclamationmark.triangle.fill")
                     .font(.system(size: 30))
                     .foregroundStyle(workout.isUpcoming ? LB.accent : LB.amber)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: LB.Space.xs) {
                     Text(workout.isUpcoming ? "Change of plans" : "Missed workout")
-                        .font(.lbDisplay(18, .semibold))
+                        .font(.lbDisplay(.headline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text("\(workout.displayName.uppercased()) · \(workout.scheduledDate.formatted(.dateTime.day().month(.abbreviated)).uppercased())")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, LB.Space.lg)
         }
     }
 
     // MARK: - Reason Picker
 
     private var reasonSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
             LBSectionHeader(title: "What happened?")
-                .padding(.horizontal)
+                .padding(.horizontal, LB.Space.lg)
 
-            FlowLayout(spacing: 9) {
+            FlowLayout(spacing: LB.Space.sm) {
                 ForEach(MissedWorkoutReason.allCases) { reason in
                     ReasonChip(
                         reason: reason,
@@ -231,18 +231,18 @@ struct MissedWorkoutFeedbackSheet: View {
                     }
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, LB.Space.lg)
         }
     }
 
     // MARK: - Action Section
 
     private var actionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
             LBSectionHeader(title: "Then what?")
-                .padding(.horizontal)
+                .padding(.horizontal, LB.Space.lg)
 
-            VStack(spacing: 9) {
+            VStack(spacing: LB.Space.sm) {
                 actionButton(
                     title: "Reschedule",
                     subtitle: "Move to another day",
@@ -284,18 +284,18 @@ struct MissedWorkoutFeedbackSheet: View {
                 }
             }
             .disabled(isSaving)
-            .padding(.horizontal)
+            .padding(.horizontal, LB.Space.lg)
 
             if isSaving {
                 ProgressView()
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 6)
+                    .padding(.top, LB.Space.sm)
             } else if let saveError {
                 Text(saveError)
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.amber)
-                    .padding(.horizontal)
-                    .padding(.top, 4)
+                    .padding(.horizontal, LB.Space.lg)
+                    .padding(.top, LB.Space.xs)
             }
         }
     }
@@ -311,24 +311,24 @@ struct MissedWorkoutFeedbackSheet: View {
     }
 
     private var confirmationCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: LB.Space.lg) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(LB.green)
             Text("Got it")
-                .font(.lbDisplay(18, .semibold))
+                .font(.lbDisplay(.headline, .semibold))
                 .foregroundStyle(LB.textPrimary)
             Text("We'll bring this up next time you review your plan.")
-                .font(.lbBody(14))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(32)
+        .padding(LB.Space.xxl)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous).fill(LB.surfaceAlt)
+            RoundedRectangle(cornerRadius: LB.Radius.card, style: .continuous).fill(LB.surfaceAlt)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+            RoundedRectangle(cornerRadius: LB.Radius.card, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
         )
         .padding(40)
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -479,18 +479,18 @@ struct MissedWorkoutFeedbackSheet: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 13) {
+            HStack(spacing: LB.Space.md) {
                 Image(systemName: icon)
                     .font(.system(size: 18))
                     .frame(width: 32)
                     .foregroundStyle(style == .prominent ? LB.accent : LB.textSecondary)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: LB.Space.xxs) {
                     Text(title)
-                        .font(.lbBody(15, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text(subtitle)
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textTertiary)
                 }
 
@@ -500,13 +500,13 @@ struct MissedWorkoutFeedbackSheet: View {
                     .font(.system(size: 13))
                     .foregroundStyle(LB.textMuted)
             }
-            .padding(15)
+            .padding(LB.Space.lg)
             .background(
-                RoundedRectangle(cornerRadius: LB.rInner, style: .continuous)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .fill(style == .prominent ? LB.accentTint(0.10) : LB.optionOff)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: LB.rInner, style: .continuous)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .strokeBorder(style == .prominent ? LB.accent.opacity(0.35) : LB.line, lineWidth: 1)
             )
         }
@@ -523,21 +523,21 @@ private struct ReasonChip: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 8) {
+            HStack(spacing: LB.Space.sm) {
                 Text(reason.emoji)
-                    .font(.callout)
+                    .font(.lbBody(.body))
                 Text(reason.label)
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
+            .padding(.horizontal, LB.Space.lg)
+            .padding(.vertical, LB.Space.md)
             .background(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .fill(isSelected ? LB.accentTint() : LB.optionOff)
             )
             .foregroundStyle(isSelected ? LB.accent : LB.textBright)
             .overlay {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .strokeBorder(isSelected ? LB.accent.opacity(0.45) : LB.line, lineWidth: 1)
             }
         }

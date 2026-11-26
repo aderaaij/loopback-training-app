@@ -11,6 +11,8 @@ import MapKit
 
 // MARK: - Stat tile
 
+/// One figure in a stat card. It draws no surface of its own: the caller
+/// groups tiles in one card and splits them with hairlines.
 struct LBStatTile: View {
     let label: String
     let value: String
@@ -21,20 +23,20 @@ struct LBStatTile: View {
     var stretch: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
             Text(label.uppercased())
-                .font(.lbBody(11))
+                .font(.lbBody(.caption))
                 .tracking(0.2)
                 .foregroundStyle(LB.textTertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(value)
-                    .font(.lbDisplay(24, .semibold))
+                    .font(.lbDisplay(.title, .semibold))
                     .foregroundStyle(accent ? LB.accent : LB.textPrimary)
                 if let unit {
                     Text(" \(unit)")
-                        .font(.lbBody(13, .medium))
+                        .font(.lbBody(.secondary, .medium))
                         .foregroundStyle(LB.textMuted)
                 }
             }
@@ -44,9 +46,7 @@ struct LBStatTile: View {
         .frame(maxWidth: .infinity,
                maxHeight: stretch ? .infinity : nil,
                alignment: stretch ? .topLeading : .leading)
-        .padding(.horizontal, 13)
-        .padding(.vertical, 14)
-        .lbCard(radius: 18)
+        .padding(LB.Space.lg)
     }
 }
 
@@ -59,22 +59,22 @@ struct LBDetailSection<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             HStack {
                 Text(title.uppercased())
-                    .font(.lbBody(13, .bold))
+                    .font(.lbBody(.secondary, .bold))
                     .tracking(0.4)
                     .foregroundStyle(LB.textTertiary)
                 Spacer()
                 if let trailing {
                     Text(trailing)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
             content
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .lbCard(fill: fill)
     }
 }
@@ -114,7 +114,7 @@ struct LBEffortGauge: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: LB.Space.sm) {
             ZStack {
                 Circle()
                     .stroke(LB.trackEmpty, lineWidth: 9)
@@ -122,41 +122,41 @@ struct LBEffortGauge: View {
                     .trim(from: 0, to: fraction)
                     .stroke(arcColor, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                VStack(spacing: 2) {
+                VStack(spacing: LB.Space.xxs) {
                     Text(scoreText)
-                        .font(.lbDisplay(30, .bold))
+                        .font(.lbDisplay(.title, .bold))
                         .foregroundStyle(LB.textPrimary)
                     Text(estimated ? "EST · EFFORT" : "EFFORT")
-                        .font(.lbBody(9))
+                        .font(.lbBody(.caption))
                         .tracking(0.6)
                         .foregroundStyle(LB.textTertiary)
                 }
             }
             .frame(width: 104, height: 104)
 
-            VStack(spacing: 1) {
+            VStack(spacing: LB.Space.xxs) {
                 if let zone {
                     Text(zone.type)
-                        .font(.lbBody(12, .semibold))
+                        .font(.lbBody(.secondary, .semibold))
                         .foregroundStyle(zone.color)
                     Text(zone.detail)
-                        .font(.lbBody(11))
+                        .font(.lbBody(.caption))
                         .foregroundStyle(LB.textTertiary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 } else {
                     Text(descriptor.label)
-                        .font(.lbBody(12, .semibold))
+                        .font(.lbBody(.secondary, .semibold))
                         .foregroundStyle(descriptor.color)
                     Text(estimated ? "Estimated · RPE" : "Rated · RPE")
-                        .font(.lbBody(11))
+                        .font(.lbBody(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
         }
         .frame(width: 128)
-        .padding(14)
-        .lbCard(radius: 18)
+        .padding(LB.Space.lg)
+        .lbCard()
     }
 }
 
@@ -170,9 +170,9 @@ struct LBRouteMap: View {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
         })
         .frame(height: 200)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
         )
         .allowsHitTesting(false)
     }
@@ -288,7 +288,7 @@ struct LBHeartRateChart: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: LB.Space.md) {
             GeometryReader { geo in
                 let pts = points(geo.size)
                 ZStack(alignment: .topLeading) {
@@ -306,11 +306,11 @@ struct LBHeartRateChart: View {
             }
             .frame(height: 132)
 
-            HStack(spacing: 16) {
+            HStack(spacing: LB.Space.lg) {
                 ForEach(zones, id: \.name) { z in
-                    HStack(spacing: 5) {
-                        RoundedRectangle(cornerRadius: 2.5).fill(z.color).frame(width: 9, height: 9)
-                        Text(z.name).font(.lbMono(10)).foregroundStyle(LB.textSecondary)
+                    HStack(spacing: LB.Space.xs) {
+                        RoundedRectangle(cornerRadius: LB.Radius.bar).fill(z.color).frame(width: 9, height: 9)
+                        Text(z.name).font(.lbMono(.caption)).foregroundStyle(LB.textSecondary)
                     }
                 }
             }
@@ -371,14 +371,14 @@ struct LBSplitsList: View {
         let frac = slowest == fastest ? 1.0
             : 0.45 + (slowest - split.pace) / range * 0.55
 
-        return HStack(spacing: 12) {
+        return HStack(spacing: LB.Space.md) {
             Text(kmLabel(i: i, split: split))
-                .font(.lbMono(12))
+                .font(.lbMono(.value))
                 .foregroundStyle(LB.textTertiary)
                 .frame(width: 30, alignment: .leading)
 
             Text(paceText(split.pace))
-                .font(.lbMono(13, .semibold))
+                .font(.lbMono(.value, .semibold))
                 .foregroundStyle(isFast ? LB.accent : LB.textBright)
                 .frame(width: 46, alignment: .leading)
 
@@ -397,13 +397,13 @@ struct LBSplitsList: View {
                     Text("\(Int(hr))").foregroundStyle(LB.textSecondary)
                     Text(" bpm").foregroundStyle(LB.textMuted)
                 }
-                .font(.lbMono(12))
+                .font(.lbMono(.value))
                 .frame(width: 58, alignment: .trailing)
             } else {
                 Spacer().frame(width: 58)
             }
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, LB.Space.sm)
     }
 
     private func kmLabel(i: Int, split: Split) -> String {
