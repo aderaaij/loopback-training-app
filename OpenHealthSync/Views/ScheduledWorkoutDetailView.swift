@@ -18,6 +18,7 @@ struct ScheduledWorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var changingPlans: MissedWorkoutInfo?
+    @State private var doingToday: MissedWorkoutInfo?
     /// The session's fuelling plan; nil hides the card.
     @State private var sessionFuel: SessionFuel?
     @Environment(FuelStore.self) private var fuelStore
@@ -45,7 +46,7 @@ struct ScheduledWorkoutDetailView: View {
                 }
 
                 if let scheduledDate, isUpcoming {
-                    changePlansButton(scheduledDate: scheduledDate)
+                    changePlansSection(scheduledDate: scheduledDate)
                 }
             }
             .padding(18)
@@ -63,6 +64,7 @@ struct ScheduledWorkoutDetailView: View {
         .sheet(item: $changingPlans, onDismiss: leaveIfChanged) { workout in
             MissedWorkoutFeedbackFlow(missedWorkouts: [workout])
         }
+        .doItToday($doingToday, onMoved: leaveIfChanged)
     }
 
     // MARK: - Change Plans
@@ -78,34 +80,66 @@ struct ScheduledWorkoutDetailView: View {
         return scheduledDate >= Calendar.current.startOfDay(for: Date())
     }
 
-    private func changePlansButton(scheduledDate: Date) -> some View {
-        Button {
-            changingPlans = MissedWorkoutInfo(
-                id: scheduled.plan.id,
-                displayName: workoutName,
-                scheduledDate: scheduledDate
-            )
-        } label: {
+    private func changePlansSection(scheduledDate: Date) -> some View {
+        let info = MissedWorkoutInfo(
+            id: scheduled.plan.id,
+            displayName: workoutName,
+            scheduledDate: scheduledDate
+        )
+        return VStack(spacing: 9) {
+            if info.canDoToday {
+                // Acts at once, so no chevron: nothing opens.
+                planRow(
+                    title: "Do it today",
+                    subtitle: "Moves it to today, on your watch too",
+                    icon: "figure.run",
+                    opensSheet: false
+                ) {
+                    doingToday = info
+                }
+            }
+            planRow(
+                title: "Change plans",
+                subtitle: "Move this run or skip it",
+                icon: "calendar.badge.clock",
+                opensSheet: true
+            ) {
+                changingPlans = info
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func planRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        opensSheet: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             HStack(spacing: 13) {
-                Image(systemName: "calendar.badge.clock")
+                Image(systemName: icon)
                     .font(.system(size: 18))
                     .frame(width: 32)
                     .foregroundStyle(LB.accent)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Change plans")
+                    Text(title)
                         .font(.lbBody(15, .semibold))
                         .foregroundStyle(LB.textPrimary)
-                    Text("Move this run or skip it")
+                    Text(subtitle)
                         .font(.lbBody(12))
                         .foregroundStyle(LB.textTertiary)
                 }
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13))
-                    .foregroundStyle(LB.textMuted)
+                if opensSheet {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13))
+                        .foregroundStyle(LB.textMuted)
+                }
             }
             .padding(15)
             .background(
@@ -116,7 +150,6 @@ struct ScheduledWorkoutDetailView: View {
             )
         }
         .buttonStyle(.plain)
-        .padding(.top, 4)
     }
 
     /// This screen shows the run as it was when opened. Once it has moved or

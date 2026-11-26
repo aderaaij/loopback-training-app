@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import HealthKit
 import SwiftUI
 import SwiftData
 import UIKit
@@ -52,6 +53,9 @@ class WorkoutScheduleManager {
     private var deviceScheduledWorkouts: [ScheduledWorkoutPlan] = []
     /// Sessions taken off the watch because a workout counts for them.
     private var retired = RetiredSessionStore()
+    /// When the watch's sessions were seen open and done, to tell which
+    /// workout a session was ticked off with.
+    private var completionLog = WatchCompletionLog()
     /// Whether the server gave the links this launch. Cached ones are good
     /// enough to draw with, but not to take a session off the watch.
     private var didFetchSessionLinks = false
@@ -142,6 +146,7 @@ class WorkoutScheduleManager {
         await reconcileWatchWithLinks()
         let current = await WorkoutScheduler.shared.scheduledWorkouts
         deviceScheduledWorkouts = current
+        completionLog.note(current)
         applySessionLinks()
 
         // Backfill the date map for any workouts not yet tracked (e.g. legacy workouts
@@ -362,6 +367,47 @@ class WorkoutScheduleManager {
             retired.remove(id: session.plan.id)
             AppLog.scheduling.info("Put session \(session.plan.id, privacy: .public) back on the watch: no workout counts for it now")
         }
+    }
+
+    /// The session the server already counts this workout for, if any.
+    func sessionCounted(for workoutId: UUID) -> UUID? {
+        sessionLinks.first { $0.value == workoutId }?.key
+    }
+
+    /// The workouts that already count for a session.
+    var countedWorkoutIds: Set<UUID> {
+        Set(sessionLinks.values)
+    }
+
+    /// A session the watch has ticked off and no workout counts for yet.
+    struct TickedSession {
+        let id: UUID
+        let activity: HKWorkoutActivityType
+        let window: WatchCompletionLog.Window
+        /// A workout was put forward for it before.
+        let wasOffered: Bool
+    }
+
+    /// The sessions the watch has ticked off without a workout counting for
+    /// them: started from the watch's schedule, which offers a session for
+    /// days either side of its own, so on any day and at any hour. Only
+    /// those seen to go from open to done, since that is what says when.
+    func tickedSessionsAwaitingWorkout() async -> [TickedSession] {
+        let onDevice = await WorkoutScheduler.shared.scheduledWorkouts
+        completionLog.note(onDevice)
+        return onDevice.compactMap { scheduled in
+            let id = scheduled.plan.id
+            guard scheduled.complete, sessionLinks[id] == nil,
+                  let activity = scheduled.plan.activityType,
+                  let window = completionLog.window(for: id)
+            else { return nil }
+            return TickedSession(id: id, activity: activity, window: window, wasOffered: completionLog.wasOffered(id))
+        }
+    }
+
+    /// Remembers that a workout was put forward for a ticked session.
+    func noteWorkoutOffered(forSession id: UUID) {
+        completionLog.markOffered(id)
     }
 
     /// Counts a recorded workout for a planned session, or with a nil session
@@ -746,6 +792,7 @@ class WorkoutScheduleManager {
         await WorkoutScheduler.shared.removeAllWorkouts()
         scheduledDateMap = [:]
         retired.removeAll()
+        completionLog.removeAll()
         await loadScheduledWorkouts()
     }
 
@@ -838,6 +885,48 @@ class WorkoutScheduleManager {
         if !(await rescheduleWorkout(id: feedback.workoutId, to: newDate)) {
             AppLog.scheduling.warning("Moved workout \(feedback.workoutId, privacy: .public) on the server but couldn't re-date it on the watch")
         }
+    }
+
+    /// The sessions on `day` that are still to do, other than the one with
+    /// `id`: what a run moved onto that day would share it with.
+    func openSessions(on day: Date, otherThan id: UUID) -> [MissedWorkoutInfo] {
+        let calendar = Calendar.current
+        return scheduledWorkouts.compactMap { scheduled in
+            guard !scheduled.complete, scheduled.plan.id != id,
+                  let date = calendar.date(from: scheduled.date),
+                  calendar.isDate(date, inSameDayAs: day)
+            else { return nil }
+            return MissedWorkoutInfo(id: scheduled.plan.id, displayName: scheduled.plan.displayTitle, scheduledDate: date)
+        }
+    }
+
+    /// Skips the runs on the day `moved` went to. Returns the ones the server
+    /// couldn't be told about, which stay on the watch.
+    func skipToMakeRoom(
+        _ others: [MissedWorkoutInfo],
+        for moved: MissedWorkoutInfo,
+        modelContext: ModelContext
+    ) async -> [MissedWorkoutInfo] {
+        var stillOn: [MissedWorkoutInfo] = []
+        for other in others {
+            let feedback = WorkoutFeedback(
+                workoutId: other.id,
+                workoutName: other.displayName,
+                scheduledDate: other.scheduledDate,
+                reason: .other,
+                action: .skip,
+                reasonNote: "Made room for \(moved.displayName)"
+            )
+            do {
+                try await skipUpcomingWorkout(feedback.payload)
+                feedback.synced = true
+                modelContext.insert(feedback)
+            } catch {
+                AppLog.scheduling.error("Failed to skip workout \(other.id, privacy: .public) to make room: \(String(describing: error), privacy: .public)")
+                stillOn.append(other)
+            }
+        }
+        return stillOn
     }
 
     /// The coach reads the device inventory, and the plan card counts the

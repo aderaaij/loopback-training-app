@@ -202,6 +202,7 @@ private struct DayDetailSection: View {
     @Environment(WorkoutScheduleManager.self) private var scheduleManager
     @AppStorage(DisplayUnits.storageKey) private var units: DisplayUnits = .deviceDefault
     @State private var feedbackWorkout: MissedWorkoutInfo?
+    @State private var doingToday: MissedWorkoutInfo?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -246,6 +247,7 @@ private struct DayDetailSection: View {
                 detector: missedWorkoutDetector
             )
         }
+        .doItToday($doingToday)
     }
 
     private var startOfToday: Date {
@@ -398,6 +400,13 @@ private struct DayDetailSection: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    if info(for: plan).canDoToday {
+                        Button {
+                            doingToday = info(for: plan)
+                        } label: {
+                            Label("Do It Today", systemImage: "figure.run")
+                        }
+                    }
                     Button {
                         feedbackWorkout = info(for: plan)
                     } label: {

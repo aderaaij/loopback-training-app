@@ -164,4 +164,34 @@ struct MissedWorkoutInfo: Identifiable {
     var isUpcoming: Bool {
         scheduledDate >= Calendar.current.startOfDay(for: Date())
     }
+
+    /// Planned for a later day than today, so it can be brought forward.
+    var canDoToday: Bool {
+        let calendar = Calendar.current
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date())) else {
+            return false
+        }
+        return scheduledDate >= tomorrow
+    }
+
+    /// The run's own time of day on `day`. A bare day would be local
+    /// midnight, which the server (bucketing by UTC date) files under the day
+    /// before anywhere east of UTC. When that time has already gone by, which
+    /// only today can do, it is now instead: a run moved to today is about to
+    /// be done, and one planned for hours ago would be too far from the
+    /// workout for the two to be matched by time.
+    func time(on day: Date, now: Date = Date()) -> Date {
+        let calendar = Calendar.current
+        let time = calendar.dateComponents([.hour, .minute], from: scheduledDate)
+        let moved = calendar.date(
+            bySettingHour: time.hour ?? 0,
+            minute: time.minute ?? 0,
+            second: 0,
+            of: day
+        ) ?? day
+        guard calendar.isDate(day, inSameDayAs: now), moved < now else { return moved }
+        // Whole minutes: the watch schedules by the minute, and the server
+        // should hold the same moment.
+        return calendar.date(from: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: now)) ?? now
+    }
 }

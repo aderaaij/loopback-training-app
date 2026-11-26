@@ -21,6 +21,7 @@ struct TrainingTabView: View {
     @State private var viewMode: ViewMode = .timeline
     @State private var selectedDate: Date?
     @State private var feedbackWorkout: MissedWorkoutInfo?
+    @State private var doingToday: MissedWorkoutInfo?
     /// How many past workouts the Training tab lists before linking to
     /// the full history screen.
     private let pastWorkoutsLimit = 10
@@ -213,6 +214,13 @@ struct TrainingTabView: View {
                                     ScheduledWorkoutRow(scheduled: scheduled)
                                 }
                                 .contextMenu {
+                                    if info(for: scheduled).canDoToday {
+                                        Button {
+                                            doingToday = info(for: scheduled)
+                                        } label: {
+                                            Label("Do It Today", systemImage: "figure.run")
+                                        }
+                                    }
                                     Button {
                                         feedbackWorkout = info(for: scheduled)
                                     } label: {
@@ -354,6 +362,7 @@ struct TrainingTabView: View {
                 detector: missedWorkoutDetector
             )
         }
+        .doItToday($doingToday)
         // Celebration sheet, covering both timeline and list modes. Presented
         // by a banner tap or the manager's post-sync auto-check; dismissing
         // without completing snoozes only the auto-present (the sheet handles
