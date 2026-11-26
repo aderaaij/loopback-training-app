@@ -164,7 +164,7 @@ class WorkoutManager {
         extractionStatuses[workoutID] = .extracting
 
         // Try to match this workout to a scheduled plan workout
-        let planId = findPlanWorkoutId(for: workout)
+        let planId = await findPlanWorkoutId(for: workout)
 
         do {
             // Encode inside autoreleasepool so route/HR arrays are freed
@@ -212,22 +212,54 @@ class WorkoutManager {
     /// Matches a HealthKit workout to a prescribed plan_workout (= workout_queue row)
     /// so `/api/workouts` is posted with a populated `plan_workout_id` FK.
     ///
-    /// Matches against `scheduleManager.planWorkouts` (API objects) rather than the
-    /// WorkoutKit `scheduledWorkouts` list — the old path filtered by
-    /// `scheduled.complete == true`, which stopped flipping reliably after W1.
+    /// Three steps, the first that answers wins:
     ///
-    /// Rule: same activity type + scheduled within ±6h of the HK start date.
-    /// Exactly one match returns that id; zero or multiple return nil (freestyle /
-    /// ambiguous). For legacy items where `scheduledDate` is nil, falls back to the
-    /// iOS-side `scheduledDateMap`.
-    private func findPlanWorkoutId(for workout: HKWorkout) -> UUID? {
+    /// 1. A session the server already counts this workout for is kept. A
+    ///    re-send carries the match again, and the server writes whatever it
+    ///    carries, so re-deriving it could drop or swap a link once the
+    ///    schedule has moved on. An automatic match never replaces a link.
+    /// 2. The session the watch ticked off with this workout, when it was
+    ///    started from the watch's schedule. That says which session it was
+    ///    whatever day it was planned for, so it comes before the planned
+    ///    time: a run done a day early often lands in another run's slot.
+    ///    The tick can reach the phone after the workout does, and
+    ///    WorkoutKit's `complete` has not always flipped reliably; until it
+    ///    has, this step has nothing to say and the next one decides.
+    ///    `workoutsTickedOffSinceSent` picks the workout up again when the
+    ///    tick arrives after it went out unmatched.
+    /// 3. The planned time, for a run recorded any other way. Matches against
+    ///    `scheduleManager.planWorkouts` (API objects): same activity type +
+    ///    scheduled within ±6h of the HK start date. Exactly one match
+    ///    returns that id; zero or multiple return nil (freestyle /
+    ///    ambiguous). For legacy items where `scheduledDate` is nil, falls
+    ///    back to the iOS-side `scheduledDateMap`.
+    private func findPlanWorkoutId(for workout: HKWorkout) async -> UUID? {
         guard let scheduleManager else { return nil }
 
-        let planWorkouts = scheduleManager.planWorkouts
-        guard !planWorkouts.isEmpty else { return nil }
+        await scheduleManager.ensureSessionLinks()
+        if let kept = scheduleManager.sessionCounted(for: workout.uuid) {
+            return kept
+        }
 
         let activityKey = Self.activityTypeName(workout.workoutActivityType)
         let sixHours: TimeInterval = 6 * 3600
+
+        let this = WatchCompletionLog.Candidate(
+            id: workout.uuid,
+            activity: activityKey,
+            span: DateInterval(start: workout.startDate, end: workout.endDate)
+        )
+        if let session = WatchCompletionLog.session(
+            for: this,
+            ticked: await tickedSessions(scheduleManager).map(\.ticked),
+            others: uncountedWorkouts(scheduleManager)
+        ) {
+            scheduleManager.noteWorkoutOffered(forSession: session)
+            return session
+        }
+
+        let planWorkouts = scheduleManager.planWorkouts
+        guard !planWorkouts.isEmpty else { return nil }
 
         let candidates: [(UUID, TimeInterval)] = planWorkouts.compactMap { pw in
             guard pw.activityType == activityKey else { return nil }
@@ -243,12 +275,81 @@ class WorkoutManager {
             let timeDiff = abs(workout.startDate.timeIntervalSince(date))
             guard timeDiff <= sixHours else { return nil }
 
+            // A session that has its workout from some other time, done
+            // early or late or counted by hand, is settled. A run that
+            // happens to fall in its old slot isn't a second go at it.
+            if let counted = scheduleManager.linkedWorkoutId(forSession: pw.id),
+               let other = allWorkouts.first(where: { $0.id == counted }),
+               abs(other.startDate.timeIntervalSince(date)) > sixHours {
+                return nil
+            }
+
             return (pw.id, timeDiff)
         }
 
         // Exactly-one-match rule: ambiguity → leave null so the server doesn't get a wrong FK.
         guard candidates.count == 1 else { return nil }
         return candidates[0].0
+    }
+
+    // MARK: - Sessions Ticked Off on the Watch
+
+    /// The ticked sessions that await a workout, in the terms the matching
+    /// works in, and whether a workout was put forward for each before.
+    private func tickedSessions(
+        _ scheduleManager: WorkoutScheduleManager
+    ) async -> [(ticked: WatchCompletionLog.Ticked, wasOffered: Bool)] {
+        await scheduleManager.tickedSessionsAwaitingWorkout().map {
+            (
+                WatchCompletionLog.Ticked(
+                    session: $0.id,
+                    activity: Self.activityTypeName($0.activity),
+                    window: $0.window
+                ),
+                $0.wasOffered
+            )
+        }
+    }
+
+    /// Recent workouts that no session counts yet: the ones a ticked session
+    /// can have been done with. The summaries carry no end date; start plus
+    /// duration falls short of it by the pauses, which is close enough here.
+    private func uncountedWorkouts(_ scheduleManager: WorkoutScheduleManager) -> [WatchCompletionLog.Candidate] {
+        let counted = scheduleManager.countedWorkoutIds
+        return allWorkouts
+            .filter { !counted.contains($0.id) }
+            .map {
+                WatchCompletionLog.Candidate(
+                    id: $0.id,
+                    activity: $0.activityType,
+                    span: DateInterval(start: $0.startDate, duration: $0.duration)
+                )
+            }
+    }
+
+    /// Workouts that were sent before the watch's tick for their session
+    /// reached the phone, and so went out unmatched. Sending them once more
+    /// lets `findPlanWorkoutId` link them to the session the watch ran. A
+    /// session asks once: if the athlete unlinks the two afterwards, asking
+    /// again on every pass would keep re-sending the workout for nothing.
+    private func workoutsTickedOffSinceSent() async -> Set<UUID> {
+        guard let scheduleManager else { return [] }
+        await scheduleManager.ensureSessionLinks()
+
+        let sessions = await tickedSessions(scheduleManager).filter { !$0.wasOffered }.map(\.ticked)
+        guard !sessions.isEmpty else { return [] }
+
+        let workouts = uncountedWorkouts(scheduleManager)
+        let sent = sentWorkoutIDs()
+        var late: Set<UUID> = []
+        for session in sessions {
+            guard let workout = WatchCompletionLog.workout(for: session, among: workouts),
+                  sent.contains(workout.uuidString)
+            else { continue }
+            scheduleManager.noteWorkoutOffered(forSession: session.session)
+            late.insert(workout)
+        }
+        return late
     }
 
     // MARK: - Auto-Extract New Workouts
@@ -271,10 +372,12 @@ class WorkoutManager {
             extractionStatuses[summary.id] != .sending
         }
 
-        // Plus the ones sent before their late figures could have arrived.
+        // Plus the ones sent before their late figures could have arrived,
+        // or before the watch's tick for their session had.
         let due = workoutsDueForResend()
+        let tickedLate = await workoutsTickedOffSinceSent()
         let resend = allWorkouts.filter { summary in
-            due.contains(summary.id.uuidString) &&
+            (due.contains(summary.id.uuidString) || tickedLate.contains(summary.id)) &&
             !pending.contains { $0.id == summary.id } &&
             extractionStatuses[summary.id] != .extracting &&
             extractionStatuses[summary.id] != .sending

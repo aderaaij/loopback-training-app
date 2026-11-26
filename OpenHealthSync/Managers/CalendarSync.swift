@@ -13,6 +13,7 @@
 
 import EventKit
 import Foundation
+import HealthKit
 import WorkoutKit
 import os
 
@@ -140,6 +141,22 @@ extension WorkoutPlan {
             return "Swim-Bike-Run"
         @unknown default:
             return "Workout"
+        }
+    }
+
+    /// The one activity the workout is; nil for a multisport one.
+    var activityType: HKWorkoutActivityType? {
+        switch workout {
+        case .custom(let custom):
+            return custom.activity
+        case .goal(let goal):
+            return goal.activity
+        case .pacer(let pacer):
+            return pacer.activity
+        case .swimBikeRun:
+            return nil
+        @unknown default:
+            return nil
         }
     }
 }
