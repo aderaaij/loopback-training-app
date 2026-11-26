@@ -77,7 +77,14 @@ struct MissedWorkoutFeedbackSheet: View {
     /// The move went through but a run it should have made room for is still on.
     @State private var partialFailure: String?
 
-    private static let unsavedMessage = "Couldn't reach your server, so nothing changed. Try again once you're connected."
+    static let unsavedMessage = "Couldn't reach your server, so nothing changed. Try again once you're connected."
+
+    /// For a move that went through while a run it should have made room for
+    /// is still on.
+    static func partialMoveMessage(moved: MissedWorkoutInfo, stillOn: [MissedWorkoutInfo]) -> String {
+        let names = stillOn.map(\.displayName).joined(separator: ", ")
+        return "\(moved.displayName) is on its new day, but \(names) couldn't be skipped because your server was unreachable. You can skip it from its own screen."
+    }
 
     var body: some View {
         ScrollView {
@@ -448,41 +455,16 @@ struct MissedWorkoutFeedbackSheet: View {
             }
 
             noteSetbackIfNeeded()
-            let stillOn = await skipToMakeRoom(others)
+            let stillOn = await scheduleManager.skipToMakeRoom(others, for: workout, modelContext: modelContext)
             if workout.isUpcoming || !others.isEmpty {
                 Task { await scheduleManager.refreshAfterPlanChange() }
             }
             if stillOn.isEmpty {
                 onComplete(workout)
             } else {
-                let names = stillOn.map(\.displayName).joined(separator: ", ")
-                partialFailure = "\(workout.displayName) is on its new day, but \(names) couldn't be skipped because your server was unreachable. You can skip it from its own screen."
+                partialFailure = Self.partialMoveMessage(moved: workout, stillOn: stillOn)
             }
         }
-    }
-
-    /// Skips the runs on the day this one moved to. Returns the ones the
-    /// server couldn't be told about, which stay on the watch.
-    private func skipToMakeRoom(_ others: [MissedWorkoutInfo]) async -> [MissedWorkoutInfo] {
-        var stillOn: [MissedWorkoutInfo] = []
-        for other in others {
-            let feedback = WorkoutFeedback(
-                workoutId: other.id,
-                workoutName: other.displayName,
-                scheduledDate: other.scheduledDate,
-                reason: .other,
-                action: .skip,
-                reasonNote: "Made room for \(workout.displayName)"
-            )
-            do {
-                try await scheduleManager.skipUpcomingWorkout(feedback.payload)
-                insertSynced(feedback)
-            } catch {
-                AppLog.scheduling.error("Failed to skip workout \(other.id, privacy: .public) to make room: \(String(describing: error), privacy: .public)")
-                stillOn.append(other)
-            }
-        }
-        return stillOn
     }
 
     // MARK: - Action Button Helper

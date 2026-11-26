@@ -840,6 +840,48 @@ class WorkoutScheduleManager {
         }
     }
 
+    /// The sessions on `day` that are still to do, other than the one with
+    /// `id`: what a run moved onto that day would share it with.
+    func openSessions(on day: Date, otherThan id: UUID) -> [MissedWorkoutInfo] {
+        let calendar = Calendar.current
+        return scheduledWorkouts.compactMap { scheduled in
+            guard !scheduled.complete, scheduled.plan.id != id,
+                  let date = calendar.date(from: scheduled.date),
+                  calendar.isDate(date, inSameDayAs: day)
+            else { return nil }
+            return MissedWorkoutInfo(id: scheduled.plan.id, displayName: scheduled.plan.displayTitle, scheduledDate: date)
+        }
+    }
+
+    /// Skips the runs on the day `moved` went to. Returns the ones the server
+    /// couldn't be told about, which stay on the watch.
+    func skipToMakeRoom(
+        _ others: [MissedWorkoutInfo],
+        for moved: MissedWorkoutInfo,
+        modelContext: ModelContext
+    ) async -> [MissedWorkoutInfo] {
+        var stillOn: [MissedWorkoutInfo] = []
+        for other in others {
+            let feedback = WorkoutFeedback(
+                workoutId: other.id,
+                workoutName: other.displayName,
+                scheduledDate: other.scheduledDate,
+                reason: .other,
+                action: .skip,
+                reasonNote: "Made room for \(moved.displayName)"
+            )
+            do {
+                try await skipUpcomingWorkout(feedback.payload)
+                feedback.synced = true
+                modelContext.insert(feedback)
+            } catch {
+                AppLog.scheduling.error("Failed to skip workout \(other.id, privacy: .public) to make room: \(String(describing: error), privacy: .public)")
+                stillOn.append(other)
+            }
+        }
+        return stillOn
+    }
+
     /// The coach reads the device inventory, and the plan card counts the
     /// plan's runs, so both should reflect a change right away. Run once after
     /// a whole change (a move plus the skips it made room with), so two

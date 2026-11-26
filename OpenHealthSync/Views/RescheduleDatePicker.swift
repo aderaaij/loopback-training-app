@@ -38,33 +38,6 @@ struct RescheduleDatePicker: View {
         return (0..<14).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
     }
 
-    /// Incomplete workouts per day, other than the one being moved.
-    private var scheduledByDay: [DateComponents: [MissedWorkoutInfo]] {
-        var result: [DateComponents: [MissedWorkoutInfo]] = [:]
-        for scheduled in scheduleManager.scheduledWorkouts {
-            guard !scheduled.complete, scheduled.plan.id != workout.id else { continue }
-            let date = calendar.date(from: scheduled.date) ?? .distantPast
-            let dc = calendar.dateComponents([.year, .month, .day], from: date)
-            let name: String
-            switch scheduled.plan.workout {
-            case .custom(let custom):
-                name = custom.displayName ?? "Custom Workout"
-            case .goal(let goal):
-                name = "Goal: \(goal.activity.displayName)"
-            case .pacer(let pacer):
-                name = "Pacer: \(pacer.activity.displayName)"
-            case .swimBikeRun:
-                name = "Swim-Bike-Run"
-            @unknown default:
-                name = "Workout"
-            }
-            result[dc, default: []].append(
-                MissedWorkoutInfo(id: scheduled.plan.id, displayName: name, scheduledDate: date)
-            )
-        }
-        return result
-    }
-
     /// The day the run already sits on. Only reachable for a run that isn't
     /// due yet (a missed run's day is in the past), and moving it there
     /// changes nothing.
@@ -72,17 +45,9 @@ struct RescheduleDatePicker: View {
         calendar.isDate(date, inSameDayAs: workout.scheduledDate)
     }
 
-    /// The picked day at the run's original time of day. A bare day would be
-    /// local midnight, which the server (bucketing by UTC date) files under
-    /// the day before anywhere east of UTC.
+    /// The picked day at the run's original time of day.
     private var newDate: Date {
-        let time = calendar.dateComponents([.hour, .minute], from: workout.scheduledDate)
-        return calendar.date(
-            bySettingHour: time.hour ?? 0,
-            minute: time.minute ?? 0,
-            second: 0,
-            of: selectedDate
-        ) ?? selectedDate
+        workout.time(on: selectedDate)
     }
 
     var body: some View {
@@ -174,10 +139,10 @@ struct RescheduleDatePicker: View {
         .disabled(isCurrentDay(selectedDate))
     }
 
+    /// The runs still to do on that day, other than the one being moved.
     private func workoutsOnDay(_ date: Date) -> [MissedWorkoutInfo]? {
-        let dc = calendar.dateComponents([.year, .month, .day], from: date)
-        guard let workouts = scheduledByDay[dc], !workouts.isEmpty else { return nil }
-        return workouts
+        let workouts = scheduleManager.openSessions(on: date, otherThan: workout.id)
+        return workouts.isEmpty ? nil : workouts
     }
 
     private func names(_ workouts: [MissedWorkoutInfo]) -> String {
