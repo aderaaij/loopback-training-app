@@ -54,7 +54,7 @@ struct WorkoutListView: View {
         .navigationTitle("Workouts")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 12) {
+                HStack(spacing: LB.Space.md) {
                     Button {
                         showResyncConfirmation = true
                     } label: {
@@ -121,33 +121,33 @@ struct WorkoutRow: View {
     var status: WorkoutExtractionStatus?
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: iconName)
                 .font(.system(size: 20))
                 .foregroundStyle(LB.accent)
                 .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.surfaceTile)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.surfaceTile)
                 )
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(summary.activityName)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
 
-                HStack(spacing: 10) {
+                HStack(spacing: LB.Space.sm) {
                     Text(summary.startDate, style: .date)
                     if let distance = summary.distance {
                         Text(formatDistance(distance))
                     }
                     Text(formatDuration(summary.duration))
                 }
-                .font(.lbMono(11))
+                .font(.lbMono(.caption))
                 .foregroundStyle(LB.textTertiary)
 
                 if shoeStore.needsCheck(workoutId: summary.id) {
                     Label("Check shoes", systemImage: "shoe.2.fill")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.accent)
                 }
             }
@@ -197,7 +197,7 @@ struct WorkoutRow: View {
         case .sent:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(LB.green)
-                .font(.caption)
+                .font(.lbBody(.secondary))
         case .extracting, .sending:
             ProgressView()
                 .controlSize(.small)
@@ -205,7 +205,7 @@ struct WorkoutRow: View {
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(LB.red)
-                .font(.caption)
+                .font(.lbBody(.secondary))
         default:
             EmptyView()
         }
@@ -252,11 +252,9 @@ struct WorkoutDetailView: View {
         workoutManager.extractionStatuses[summary.id] ?? .notExtracted
     }
 
-    private let grid = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: LB.Space.md) {
                 titleHeader
 
                 if loading {
@@ -284,7 +282,7 @@ struct WorkoutDetailView: View {
 
                 extractionCard
             }
-            .padding(18)
+            .padding(LB.Space.lg)
         }
         .background(LB.bg)
         .navigationTitle(summary.activityName)
@@ -321,10 +319,10 @@ struct WorkoutDetailView: View {
     /// fulfilled, in which plan, with live status and any missed-day feedback.
     private func planSection(context: WorkoutContext, item: WorkoutContextQueueItem) -> some View {
         LBDetailSection(title: "Plan", trailing: context.plan?.name?.uppercased()) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: LB.Space.sm) {
+                HStack(spacing: LB.Space.sm) {
                     Text(item.title ?? "Planned session")
-                        .font(.lbBody(14, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.textPrimary)
                         .lineLimit(2)
                     Spacer()
@@ -335,19 +333,19 @@ struct WorkoutDetailView: View {
 
                 if let scheduleLine {
                     Text(scheduleLine)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
 
                 if let line = feedbackLine(from: context.feedback) {
                     Text(line)
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textSecondary)
                 }
 
                 if let line = substitutionLine(for: item) {
                     Text(line)
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textSecondary)
                 }
 
@@ -355,7 +353,7 @@ struct WorkoutDetailView: View {
 
                 HStack {
                     Text(context.planLinkManual == true ? "Linked by you" : "Matched automatically")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                     Spacer()
                     if isUnlinking {
@@ -374,7 +372,7 @@ struct WorkoutDetailView: View {
                             }
                         } label: {
                             Text("Change")
-                                .font(.lbBody(13, .semibold))
+                                .font(.lbBody(.secondary, .semibold))
                                 .foregroundStyle(LB.accent)
                         }
                     }
@@ -382,7 +380,7 @@ struct WorkoutDetailView: View {
 
                 if unlinkFailed {
                     Text("Couldn't unlink. Try again once you're connected.")
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.amber)
                 }
             }
@@ -396,18 +394,18 @@ struct WorkoutDetailView: View {
         Button {
             pickingSession = true
         } label: {
-            HStack(spacing: 13) {
+            HStack(spacing: LB.Space.md) {
                 Image(systemName: "link")
                     .font(.system(size: 18))
                     .frame(width: 32)
                     .foregroundStyle(LB.accent)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: LB.Space.xxs) {
                     Text("Count for a planned session")
-                        .font(.lbBody(15, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text("Not linked to your plan yet")
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textTertiary)
                 }
 
@@ -417,7 +415,7 @@ struct WorkoutDetailView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(LB.textMuted)
             }
-            .padding(16)
+            .padding(LB.Space.lg)
             .lbCard()
         }
         .buttonStyle(.plain)
@@ -495,27 +493,27 @@ struct WorkoutDetailView: View {
     // MARK: Header
 
     private var titleHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
             Text(summary.activityName)
-                .font(.lbDisplay(24, .bold))
+                .font(.lbDisplay(.title, .bold))
                 .tracking(-0.6)
                 .foregroundStyle(LB.textPrimary)
             Text(metaLine)
-                .font(.lbMono(11))
+                .font(.lbMono(.caption))
                 .foregroundStyle(LB.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var loadingTile: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             ProgressView().tint(LB.accent)
             Text("Loading workout data…")
-                .font(.lbBody(14))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
             Spacer()
         }
-        .padding(20)
+        .padding(LB.Space.lg)
         .lbCard()
     }
 
@@ -577,7 +575,7 @@ struct WorkoutDetailView: View {
         let specs = statSpecs(d)
         if let effort = d.effortScore ?? d.estimatedEffortScore {
             // Stat rows stretch to match the (taller) gauge so the bottoms align.
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: LB.Space.md) {
                 statColumn(specs, stretch: true)
                 LBEffortGauge(score: effort,
                               estimated: d.effortScore == nil,
@@ -611,7 +609,7 @@ struct WorkoutDetailView: View {
     private func afterWorkoutTiles(_ d: DetailedWorkout) -> some View {
         let specs = afterWorkoutSpecs(d)
         if !specs.isEmpty {
-            HStack(spacing: 12) {
+            LBTileRow {
                 ForEach(specs) { spec in
                     LBStatTile(label: spec.label, value: spec.value, unit: spec.unit)
                 }
@@ -623,36 +621,49 @@ struct WorkoutDetailView: View {
         let rows = stride(from: 0, to: specs.count, by: 2).map {
             Array(specs[$0..<min($0 + 2, specs.count)])
         }
-        return VStack(spacing: 12) {
+        // One card, two figures across, split by hairlines.
+        return VStack(spacing: 0) {
             ForEach(rows.indices, id: \.self) { ri in
-                HStack(spacing: 12) {
-                    ForEach(rows[ri]) { spec in
+                if ri > 0 {
+                    Rectangle().fill(LB.line).frame(height: 1)
+                }
+                HStack(spacing: 0) {
+                    ForEach(rows[ri].indices, id: \.self) { ci in
+                        let spec = rows[ri][ci]
+                        if ci > 0 {
+                            Rectangle().fill(LB.line).frame(width: 1)
+                        }
                         LBStatTile(label: spec.label, value: spec.value,
                                    unit: spec.unit, accent: spec.accent, stretch: stretch)
                     }
                     if rows[ri].count == 1 {
+                        Rectangle().fill(LB.line).frame(width: 1)
                         Color.clear.frame(maxWidth: .infinity)
                     }
                 }
+                // Stretching rows share the height on offer; otherwise a row
+                // is as tall as its figures, and the hairline follows.
+                .fixedSize(horizontal: false, vertical: !stretch)
                 .frame(maxHeight: stretch ? .infinity : nil)
             }
         }
+        .lbCard()
     }
 
     // MARK: Fallback (summary only)
 
     private var summaryStatGrid: some View {
-        LazyVGrid(columns: grid, spacing: 12) {
-            if let distance = summary.distance, distance > 0 {
-                LBStatTile(label: "Distance", value: units.distanceNumber(meters: distance), unit: units.distanceUnit)
-            }
-            LBStatTile(label: "Duration", value: formatDuration(summary.duration))
-            if let distance = summary.distance, distance > 0 {
-                LBStatTile(label: "Avg pace",
-                           value: paceValue(duration: summary.duration, distance: distance),
-                           unit: units.paceUnit, accent: true)
-            }
+        var specs: [StatSpec] = []
+        if let distance = summary.distance, distance > 0 {
+            specs.append(StatSpec(label: "Distance", value: units.distanceNumber(meters: distance), unit: units.distanceUnit))
         }
+        specs.append(StatSpec(label: "Duration", value: formatDuration(summary.duration)))
+        if let distance = summary.distance, distance > 0 {
+            specs.append(StatSpec(label: "Avg pace",
+                                  value: paceValue(duration: summary.duration, distance: distance),
+                                  unit: units.paceUnit, accent: true))
+        }
+        return statColumn(specs, stretch: false)
     }
 
     // MARK: Derived strings
@@ -724,19 +735,19 @@ struct WorkoutDetailView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Extraction")
-                    .font(.lbBody(14))
+                    .font(.lbBody(.body))
                     .foregroundStyle(LB.textBright)
                 Spacer()
                 extractionStatusRow
             }
-            .padding(.vertical, 14)
+            .padding(.vertical, LB.Space.md)
 
             Rectangle().fill(LB.line).frame(height: 1)
 
             extractButton
-                .padding(.vertical, 14)
+                .padding(.vertical, LB.Space.md)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, LB.Space.lg)
         .lbCard()
     }
 
@@ -745,34 +756,34 @@ struct WorkoutDetailView: View {
         switch status {
         case .notExtracted:
             Text("Not extracted")
-                .font(.lbMono(12))
+                .font(.lbMono(.value))
                 .foregroundStyle(LB.textTertiary)
         case .extracting:
-            HStack(spacing: 7) {
+            HStack(spacing: LB.Space.sm) {
                 ProgressView().controlSize(.small).tint(LB.accent)
-                Text("Extracting…").font(.lbMono(12)).foregroundStyle(LB.textSecondary)
+                Text("Extracting…").font(.lbMono(.value)).foregroundStyle(LB.textSecondary)
             }
         case .sending:
-            HStack(spacing: 7) {
+            HStack(spacing: LB.Space.sm) {
                 ProgressView().controlSize(.small).tint(LB.accent)
-                Text("Sending…").font(.lbMono(12)).foregroundStyle(LB.textSecondary)
+                Text("Sending…").font(.lbMono(.value)).foregroundStyle(LB.textSecondary)
             }
         case .sent(let date):
-            HStack(spacing: 7) {
+            HStack(spacing: LB.Space.sm) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(LB.green)
                 Text("Sent \(date.formatted(date: .omitted, time: .shortened))")
-                    .font(.lbMono(12))
+                    .font(.lbMono(.value))
                     .foregroundStyle(LB.textSecondary)
             }
         case .failed(let message):
-            HStack(spacing: 6) {
+            HStack(spacing: LB.Space.sm) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(LB.red)
                 Text(message)
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textSecondary)
                     .lineLimit(2)
             }
@@ -785,7 +796,7 @@ struct WorkoutDetailView: View {
         case .extracting, .sending:
             HStack {
                 Text("Working…")
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(LB.textMuted)
                 Spacer()
             }
@@ -795,7 +806,7 @@ struct WorkoutDetailView: View {
             } label: {
                 HStack {
                     Text(isSent ? "Re-extract & send" : "Extract & send")
-                        .font(.lbBody(14, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.accent)
                     Spacer()
                     Image(systemName: "arrow.triangle.2.circlepath")

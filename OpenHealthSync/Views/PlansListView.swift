@@ -77,7 +77,7 @@ struct PlansListView: View {
     private func section(for lifecycle: PlanLifecycle) -> some View {
         let group = plans(lifecycle)
         if !group.isEmpty {
-            Section {
+            LBSection {
                 ForEach(group) { plan in
                     NavigationLink {
                         PlanDetailView(plan: plan, scheduleManager: scheduleManager)
@@ -88,7 +88,6 @@ struct PlansListView: View {
             } header: {
                 LBSectionHeader(title: lifecycle.label)
             }
-            .listRowBackground(LB.surface)
         }
     }
 }
@@ -99,23 +98,23 @@ struct PlanRow: View {
     let plan: TrainingPlan
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: PlanFormat.icon(for: plan.activityType))
                 .font(.system(size: 18))
                 .foregroundStyle(plan.isStrength ? LB.violet : LB.blue)
                 .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LB.surfaceTile)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.surfaceTile)
                 )
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(plan.name)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
                     .lineLimit(1)
                 if let dateRange = PlanFormat.dateRange(plan) {
                     Text(dateRange)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
@@ -124,7 +123,7 @@ struct PlanRow: View {
 
             LBStatusChip(text: trailingDetail, color: chipColor)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, LB.Space.xxs)
     }
 
     private var trailingDetail: String {
@@ -199,7 +198,7 @@ struct PlanDetailView: View {
 
     var body: some View {
         List {
-            Section {
+            LBSection(bare: true) {
                 PlanOverviewCard(
                     plan: plan,
                     planWorkouts: workouts,
@@ -211,20 +210,19 @@ struct PlanDetailView: View {
             }
 
             if let goals = plan.metadata?.goals, !goals.isEmpty {
-                Section {
+                LBSection {
                     ForEach(Array(goals.enumerated()), id: \.offset) { _, goal in
                         GoalRow(goal: goal)
                     }
                 } header: {
                     LBSectionHeader(title: "Goals")
                 }
-                .listRowBackground(LB.surface)
             }
 
             // A plan of individually dated sessions has no weekly cadence
             // to list; its sessions follow below.
             if let schedule = planSchedule?.schedule ?? plan.metadata?.schedule, !schedule.days.isEmpty {
-                Section {
+                LBSection {
                     ForEach(schedule.orderedDays, id: \.weekday) { day in
                         CadenceRow(weekday: day.weekday, routine: day.routine)
                     }
@@ -235,11 +233,10 @@ struct PlanDetailView: View {
                         Text(horizonText)
                     }
                 }
-                .listRowBackground(LB.surface)
             }
 
             if let sessions = planSchedule?.sessions, !sessions.isEmpty {
-                Section {
+                LBSection {
                     ForEach(sessions) { session in
                         ScheduleSessionRow(session: session)
                     }
@@ -251,21 +248,19 @@ struct PlanDetailView: View {
                         Text(horizonText)
                     }
                 }
-                .listRowBackground(LB.surface)
             }
 
             if isLoading {
-                Section {
-                    HStack(spacing: 12) {
+                LBSection {
+                    HStack(spacing: LB.Space.md) {
                         ProgressView().controlSize(.small)
                         Text("Loading workouts…")
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textSecondary)
                     }
                 }
-                .listRowBackground(LB.surface)
             } else if !sortedWorkouts.isEmpty {
-                Section {
+                LBSection {
                     ForEach(sortedWorkouts) { workout in
                         // Only rows still present in the WorkoutKit scheduler
                         // have a structured detail to open; the rest render
@@ -283,18 +278,16 @@ struct PlanDetailView: View {
                 } header: {
                     LBSectionHeader(title: "Workouts (\(sortedWorkouts.count))")
                 }
-                .listRowBackground(LB.surface)
             }
 
             if let background = plan.metadata?.background, !background.isEmpty {
-                Section {
+                LBSection {
                     Text(background)
-                        .font(.lbBody(13))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textSecondary)
                 } header: {
                     LBSectionHeader(title: "Background")
                 }
-                .listRowBackground(LB.surface)
             }
         }
         .lbList()
@@ -331,12 +324,12 @@ private struct GoalRow: View {
     let goal: PlanGoal
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LB.Space.sm) {
             Image(systemName: "target")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.blue)
             Text(text)
-                .font(.lbBody(13, .medium))
+                .font(.lbBody(.secondary, .medium))
                 .foregroundStyle(LB.textPrimary)
             Spacer()
         }
@@ -362,16 +355,16 @@ private struct CadenceRow: View {
     let routine: RoutineRef
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             Text(weekday.prefix(3).uppercased())
-                .font(.lbMono(11, .semibold))
+                .font(.lbMono(.caption, .semibold))
                 .foregroundStyle(LB.textTertiary)
                 .frame(width: 40, alignment: .leading)
             Image(systemName: "dumbbell.fill")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.violet)
             Text(routine.title)
-                .font(.lbBody(13, .medium))
+                .font(.lbBody(.secondary, .medium))
                 .foregroundStyle(LB.textPrimary)
             Spacer()
         }
@@ -387,17 +380,17 @@ private struct ScheduleSessionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             Image(systemName: "dumbbell.fill")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(isPast ? LB.textFaint : LB.violet)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(session.title)
-                    .font(.lbBody(13, .medium))
+                    .font(.lbBody(.secondary, .medium))
                     .foregroundStyle(isPast ? LB.textTertiary : LB.textPrimary)
                 if let day = session.day {
                     Text(PlanFormat.medium.string(from: day))
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
                 if session.conflict {
@@ -406,13 +399,13 @@ private struct ScheduleSessionRow: View {
                         overlaps.map { "Overlaps \($0)" } ?? "Overlaps a scheduled run",
                         systemImage: "exclamationmark.triangle.fill"
                     )
-                    .font(.lbBody(11))
+                    .font(.lbBody(.caption))
                     .foregroundStyle(LB.amber)
                 }
             }
             Spacer()
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, LB.Space.xxs)
     }
 }
 
@@ -422,22 +415,22 @@ private struct PlanWorkoutRow: View {
     private var isCompleted: Bool { workout.status == "completed" }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(isCompleted ? LB.green : LB.textFaint)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(workout.title)
-                    .font(.lbBody(13, .medium))
+                    .font(.lbBody(.secondary, .medium))
                     .foregroundStyle(isCompleted ? LB.textPrimary : LB.textSecondary)
                 if let date = workout.scheduledDate {
                     Text(PlanFormat.medium.string(from: date))
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
             Spacer()
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, LB.Space.xxs)
     }
 }
 

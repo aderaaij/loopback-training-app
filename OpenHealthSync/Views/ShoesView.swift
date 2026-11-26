@@ -25,7 +25,7 @@ struct ShoesView: View {
         Form {
             switch store.loadState {
             case .idle, .loading:
-                Section {
+                LBSection {
                     HStack {
                         Spacer()
                         ProgressView()
@@ -33,9 +33,9 @@ struct ShoesView: View {
                     }
                 }
             case .failed:
-                Section {
+                LBSection {
                     Text(failureMessage)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
                     Button("Try Again") {
                         Task { await store.load() }
@@ -45,7 +45,6 @@ struct ShoesView: View {
                 loadedSections
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Shoes")
         .navigationBarTitleDisplayMode(.inline)
@@ -71,15 +70,15 @@ struct ShoesView: View {
     @ViewBuilder
     private var loadedSections: some View {
         if store.shoes.isEmpty {
-            Section {
+            LBSection {
                 Text("Add the shoes you run in to see how far each pair has gone.")
-                    .font(.lbBody(14))
+                    .font(.lbBody(.body))
                     .foregroundStyle(LB.textSecondary)
                 Button("Add a Pair") { showingAdd = true }
             }
         } else {
             if !store.inUse.isEmpty {
-                Section {
+                LBSection {
                     ForEach(store.inUse) { shoe in
                         NavigationLink {
                             ShoeFormView(shoe: shoe)
@@ -94,7 +93,7 @@ struct ShoesView: View {
                 }
             }
             if !store.retired.isEmpty {
-                Section("Retired") {
+                LBSection("Retired") {
                     ForEach(store.retired) { shoe in
                         NavigationLink {
                             ShoeFormView(shoe: shoe)
@@ -122,10 +121,10 @@ struct ShoeRow: View {
     let units: DisplayUnits
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
+            HStack(spacing: LB.Space.sm) {
                 Text(shoe.name)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(shoe.isRetired ? LB.textSecondary : LB.textPrimary)
                     .lineLimit(1)
                 if shoe.isDefault {
@@ -135,7 +134,7 @@ struct ShoeRow: View {
             }
 
             Text(mileage)
-                .font(.lbMono(12))
+                .font(.lbMono(.value))
                 .foregroundStyle(LB.textTertiary)
 
             if let fraction = shoe.wornFraction, !shoe.isRetired {
@@ -144,12 +143,12 @@ struct ShoeRow: View {
                     .accessibilityLabel("\(Int((fraction * 100).rounded())) percent of target")
                 if let wearLabel {
                     Text(wearLabel)
-                        .font(.lbBody(12, .semibold))
+                        .font(.lbBody(.secondary, .semibold))
                         .foregroundStyle(wearColor)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, LB.Space.xs)
     }
 
     private var mileage: String {
@@ -202,14 +201,14 @@ struct ShoeFormView: View {
 
     var body: some View {
         Form {
-            Section {
+            LBSection {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.words)
             } footer: {
                 Text("For example the model and colour, so you can tell pairs apart.")
             }
 
-            Section {
+            LBSection {
                 distanceField("Starting mileage", text: $startText)
                 distanceField("Target", text: $targetText)
             } footer: {
@@ -217,7 +216,7 @@ struct ShoeFormView: View {
             }
 
             if shoe?.isRetired != true {
-                Section {
+                LBSection {
                     Toggle("Use for new runs", isOn: $isDefault)
                 } footer: {
                     Text("New runs are put on this pair as they sync. Only one pair can be the default.")
@@ -225,7 +224,7 @@ struct ShoeFormView: View {
             }
 
             if let shoe {
-                Section {
+                LBSection {
                     Button(shoe.isRetired ? "Bring Back into Use" : "Retire This Pair") {
                         run { try await store.setRetired(shoe, !shoe.isRetired) }
                     }
@@ -238,14 +237,13 @@ struct ShoeFormView: View {
             }
 
             if let errorMessage {
-                Section {
+                LBSection {
                     Text(errorMessage)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.red)
                 }
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle(shoe == nil ? "New Pair" : "Edit Pair")
         .navigationBarTitleDisplayMode(.inline)
@@ -392,7 +390,7 @@ struct WorkoutShoeSection: View {
         Group {
             if !store.shoes.isEmpty {
                 LBDetailSection(title: "Shoes") {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: LB.Space.sm) {
                         Menu {
                             Picker("Shoes", selection: selection) {
                                 Text("None").tag(UUID?.none)
@@ -403,7 +401,7 @@ struct WorkoutShoeSection: View {
                         } label: {
                             HStack {
                                 Text(store.shoe(id: selectedId)?.name ?? "None")
-                                    .font(.lbBody(14, .semibold))
+                                    .font(.lbBody(.body, .semibold))
                                     .foregroundStyle(LB.textPrimary)
                                     .lineLimit(1)
                                 Spacer()
@@ -415,7 +413,7 @@ struct WorkoutShoeSection: View {
 
                         if let shoe = store.shoe(id: selectedId) {
                             Text("\(Int(units.distanceValue(meters: shoe.distance).rounded())) \(units.distanceUnit) on this pair")
-                                .font(.lbMono(11))
+                                .font(.lbMono(.caption))
                                 .foregroundStyle(LB.textTertiary)
                         }
                         if store.needsCheck(workoutId: workoutId) {
@@ -423,7 +421,7 @@ struct WorkoutShoeSection: View {
                         }
                         if failed {
                             Text("Couldn't change the pair. Try again.")
-                                .font(.lbBody(12))
+                                .font(.lbBody(.secondary))
                                 .foregroundStyle(LB.red)
                         }
                     }
@@ -439,30 +437,30 @@ struct WorkoutShoeSection: View {
 
     /// Shown while the run still has the pair it got automatically.
     private var checkPrompt: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
             Text(selectedId == nil
                  ? "No pair on this run yet. Which one did you wear?"
                  : "Added automatically. Is this the pair you wore?")
-                .font(.lbBody(12))
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.textSecondary)
 
             Button {
                 confirm()
             } label: {
                 Text(selectedId == nil ? "None of these" : "Yes, this pair")
-                    .font(.lbBody(13, .semibold))
+                    .font(.lbBody(.secondary, .semibold))
                     .foregroundStyle(LB.accent)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, LB.Space.md)
+                    .padding(.vertical, LB.Space.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(LB.accentTint())
                     )
             }
             .buttonStyle(.plain)
             .disabled(isConfirming)
         }
-        .padding(.top, 2)
+        .padding(.top, LB.Space.xxs)
     }
 
     /// Keeps the pair as it is and records that the athlete looked at it.

@@ -28,22 +28,22 @@ struct TrainingCalendarView: View {
                 // Missed workout banner
                 if !missedWorkoutDetector.missedWorkouts.isEmpty {
                     MissedWorkoutBanner(detector: missedWorkoutDetector)
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
+                        .lbScreenEdge()
+                        .padding(.bottom, LB.Space.md)
                 }
 
                 // Open illness or injury: daily status and "I've recovered".
                 if !setbackStore.active.isEmpty {
-                    VStack(spacing: 8) { SetbackBanner() }
-                        .padding(.horizontal)
-                        .padding(.bottom, 12)
+                    VStack(spacing: LB.Space.sm) { SetbackBanner() }
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.bottom, LB.Space.md)
                 }
 
                 // Plan wrap-up banner — the server marked a plan finishable.
                 if let finishable = scheduleManager.finishablePlan {
                     PlanCompletionBanner(plan: finishable, scheduleManager: scheduleManager)
-                        .padding(.horizontal)
-                        .padding(.bottom, 12)
+                        .padding(.horizontal, LB.Space.lg)
+                        .padding(.bottom, LB.Space.md)
                 }
 
                 // Plan overview
@@ -61,21 +61,23 @@ struct TrainingCalendarView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.3), value: scheduleManager.activePlan != nil)
-                .padding(.horizontal)
-                .padding(.bottom, 16)
+                .lbScreenEdge()
+                .padding(.bottom, LB.Space.md)
 
                 // Active strength cycle (display-only Hevy cadence)
                 if let strengthPlan = scheduleManager.activeStrengthPlan {
                     StrengthCycleCard(plan: strengthPlan, scheduleManager: scheduleManager)
-                        .padding(.horizontal)
-                        .padding(.bottom, 16)
+                        .lbScreenEdge()
+                        .padding(.bottom, LB.Space.md)
                 }
 
-                // Week strip
+                // Week strip. The cards above each end a sibling gap short of
+                // it; this makes up the rest of a section gap.
                 WeekStripView(
                     timelineItems: timelineItemsByDay,
                     selectedDate: $resolvedSelectedDate
                 )
+                .padding(.top, LB.Space.md)
 
                 // Selected day's workouts
                 DayDetailSection(
@@ -84,9 +86,9 @@ struct TrainingCalendarView: View {
                     workoutManager: workoutManager,
                     missedWorkoutDetector: missedWorkoutDetector
                 )
-                .padding(.top, 4)
+                .padding(.top, LB.Space.md)
             }
-            .padding(.bottom)
+            .padding(.bottom, LB.Space.lg)
             // The page is exactly as wide as the screen, whatever a child
             // asks for, and has nowhere to go sideways. Only the week strip
             // scrolls that way, inside its own frame.
@@ -206,40 +208,37 @@ private struct DayDetailSection: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
+            // A heading and one card per workout, straight on the background.
+            // Wrapping them in a card of their own put a border inside a border.
+            VStack(alignment: .leading, spacing: LB.Space.md) {
                 Text(date, format: .dateTime.weekday(.wide).month(.abbreviated).day())
-                    .font(.lbDisplay(17, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
-                    .padding(.horizontal)
 
                 if items.isEmpty {
-                    VStack(spacing: 10) {
+                    VStack(spacing: LB.Space.sm) {
                         Image(systemName: "moon.zzz")
                             .font(.system(size: 30, weight: .light))
                             .foregroundStyle(LB.textMuted)
                         Text("Rest & recover")
-                            .font(.lbDisplay(16, .semibold))
+                            .font(.lbDisplay(.subheadline, .semibold))
                             .foregroundStyle(LB.textSecondary)
                         Text("No scheduled workout. An easy walk is optional — let HRV climb back.")
-                            .font(.lbBody(13))
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.textMuted)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 240)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 22)
+                    .padding(.vertical, LB.Space.xl)
                 } else {
                     ForEach(items) { item in
                         timelineItemRow(item)
-                            .padding(.horizontal)
-                            .padding(.vertical, 4)
                     }
                 }
             }
-            .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cardStyle()
-            .padding(.horizontal)
+            .lbScreenEdge()
         }
         .sheet(item: $feedbackWorkout) { workout in
             MissedWorkoutFeedbackFlow(
@@ -311,22 +310,22 @@ private struct DayDetailSection: View {
                 if let feedback = existingFeedback(for: plan) {
                     // Already checked in — show reason and action
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: LB.Space.xs) {
                             ScheduledWorkoutRow(scheduled: plan, isMissed: true)
                             workoutStructureHint(plan)
                         }
                         Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
+                        VStack(alignment: .trailing, spacing: LB.Space.xxs) {
                             Text("\(feedback.reason.emoji) \(feedback.reason.label)")
-                                .font(.caption)
+                                .font(.lbBody(.secondary))
                                 .foregroundStyle(.secondary)
                             Text(feedback.action.label)
-                                .font(.caption.weight(.medium))
+                                .font(.lbBody(.secondary, .medium))
                                 .foregroundStyle(.orange)
                         }
                     }
-                    .padding()
-                    .innerCardStyle(tint: .orange)
+                    .padding(LB.Space.lg)
+                    .cardStyle(tint: .orange)
                 } else {
                     // No feedback yet — tap opens feedback sheet
                     let missedInfo = missedWorkoutDetector.missedInfo(for: plan.plan.id) ?? info(for: plan)
@@ -334,17 +333,17 @@ private struct DayDetailSection: View {
                         feedbackWorkout = missedInfo
                     } label: {
                         HStack {
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: LB.Space.xs) {
                                 ScheduledWorkoutRow(scheduled: plan, isMissed: true)
                                 workoutStructureHint(plan)
                             }
                             Spacer()
                             Text("Check in")
-                                .font(.caption.weight(.medium))
+                                .font(.lbBody(.secondary, .medium))
                                 .foregroundStyle(.orange)
                         }
-                        .padding()
-                        .innerCardStyle(tint: .orange)
+                        .padding(LB.Space.lg)
+                        .cardStyle(tint: .orange)
                     }
                     .buttonStyle(.plain)
                 }
@@ -362,7 +361,7 @@ private struct DayDetailSection: View {
                     }
                 } label: {
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: LB.Space.xs) {
                             ScheduledWorkoutRow(scheduled: plan)
                             if let summary = matched {
                                 completedWorkoutMetrics(summary)
@@ -373,11 +372,11 @@ private struct DayDetailSection: View {
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.tertiary)
                     }
-                    .padding()
-                    .innerCardStyle(tint: .green)
+                    .padding(LB.Space.lg)
+                    .cardStyle(tint: .green)
                 }
                 .buttonStyle(.plain)
             } else {
@@ -386,17 +385,17 @@ private struct DayDetailSection: View {
                     ScheduledWorkoutDetailView(scheduled: plan)
                 } label: {
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: LB.Space.xs) {
                             ScheduledWorkoutRow(scheduled: plan)
                             workoutStructureHint(plan)
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.tertiary)
                     }
-                    .padding()
-                    .innerCardStyle()
+                    .padding(LB.Space.lg)
+                    .cardStyle()
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
@@ -428,17 +427,17 @@ private struct DayDetailSection: View {
                         StrengthSessionRow(entry: entry)
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.tertiary)
                     }
-                    .padding()
-                    .innerCardStyle(tint: .green)
+                    .padding(LB.Space.lg)
+                    .cardStyle(tint: .green)
                 }
                 .buttonStyle(.plain)
             } else {
                 StrengthSessionRow(entry: entry)
-                    .padding()
-                    .innerCardStyle(tint: entry.completed ? .green : nil)
+                    .padding(LB.Space.lg)
+                    .cardStyle(tint: entry.completed ? .green : nil)
             }
         case .pastWorkout(let summary):
             NavigationLink {
@@ -448,7 +447,7 @@ private struct DayDetailSection: View {
                 )
             } label: {
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: LB.Space.xs) {
                         WorkoutRow(
                             summary: summary,
                             status: workoutManager.extractionStatuses[summary.id]
@@ -457,11 +456,11 @@ private struct DayDetailSection: View {
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.caption)
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(.tertiary)
                 }
-                .padding()
-                .innerCardStyle()
+                .padding(LB.Space.lg)
+                .cardStyle()
             }
             .buttonStyle(.plain)
         }
@@ -491,12 +490,12 @@ private struct DayDetailSection: View {
         if case .custom(let custom) = plan.plan.workout {
             let parts = buildStructureParts(custom)
             if !parts.isEmpty {
-                HStack(spacing: 4) {
+                HStack(spacing: LB.Space.xs) {
                     Image(systemName: "list.bullet")
-                        .font(.caption2)
+                        .font(.lbBody(.caption))
                         .foregroundStyle(.tertiary)
                     Text(parts.joined(separator: " · "))
-                        .font(.caption)
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(.tertiary)
                 }
                 .padding(.leading, 40)
@@ -523,20 +522,20 @@ private struct DayDetailSection: View {
 
     @ViewBuilder
     private func completedWorkoutMetrics(_ summary: WorkoutSummary) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: LB.Space.md) {
             if let distance = summary.distance, distance > 0 {
                 Label(formatDistance(distance), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(.secondary)
             }
 
             Label(formatDuration(summary.duration), systemImage: "timer")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(.secondary)
 
             if let distance = summary.distance, distance > 0 {
                 Label(formatPace(duration: summary.duration, distance: distance), systemImage: "speedometer")
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(.secondary)
             }
         }
@@ -550,7 +549,7 @@ private struct DayDetailSection: View {
         if let scheduledDate = Calendar.current.date(from: plan.date),
            !Calendar.current.isDate(summary.startDate, inSameDayAs: scheduledDate) {
             Text("Done \(summary.startDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 40)
         }
@@ -581,12 +580,12 @@ private struct DayDetailSection: View {
     @ViewBuilder
     private func pastWorkoutMetrics(_ summary: WorkoutSummary) -> some View {
         if let distance = summary.distance, distance > 0 {
-            HStack(spacing: 4) {
+            HStack(spacing: LB.Space.xs) {
                 Image(systemName: "speedometer")
-                    .font(.caption2)
+                    .font(.lbBody(.caption))
                     .foregroundStyle(.tertiary)
                 Text("Pace: \(formatPace(duration: summary.duration, distance: distance))")
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(.tertiary)
             }
             .padding(.leading, 40)

@@ -30,7 +30,7 @@ struct PaceCalculatorView: View {
 
     var body: some View {
         Form {
-            Section {
+            LBSection(bare: true) {
                 Picker("Work out", selection: $unknown) {
                     ForEach(PaceCalculator.Unknown.allCases) { option in
                         Text(option.label).tag(option)
@@ -43,7 +43,7 @@ struct PaceCalculatorView: View {
                 Text("Work out")
             }
 
-            Section("Distance") {
+            LBSection("Distance") {
                 if unknown == .distance {
                     answerRow(result.map { units.distanceNumber(meters: $0.meters) }, unit: units.distanceUnit)
                 } else {
@@ -62,11 +62,11 @@ struct PaceCalculatorView: View {
                 }
             }
 
-            Section("Time") {
+            LBSection("Time") {
                 if unknown == .time {
                     answerRow(result.map { PaceCalculator.clock($0.seconds) }, unit: nil)
                 } else {
-                    HStack(spacing: 12) {
+                    HStack(spacing: LB.Space.md) {
                         Text("Time")
                         Spacer()
                         part($hoursText, "h", .hours)
@@ -76,14 +76,14 @@ struct PaceCalculatorView: View {
                 }
             }
 
-            Section("Pace") {
+            LBSection("Pace") {
                 if unknown == .pace {
                     answerRow(
                         result.map { PaceCalculator.clock($0.secondsPerKm * unitMeters / 1000) },
                         unit: units.paceUnit
                     )
                 } else {
-                    HStack(spacing: 12) {
+                    HStack(spacing: LB.Space.md) {
                         Text("Pace")
                         Spacer()
                         part($paceMinutesText, "min", .paceMinutes)
@@ -95,7 +95,7 @@ struct PaceCalculatorView: View {
             }
 
             if let result {
-                Section {
+                LBSection {
                     ForEach(PaceCalculator.splits(for: result, unitMeters: unitMeters)) { split in
                         splitRow(split)
                     }
@@ -106,7 +106,6 @@ struct PaceCalculatorView: View {
                 }
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Pace Calculator")
         .navigationBarTitleDisplayMode(.inline)
@@ -130,7 +129,7 @@ struct PaceCalculatorView: View {
     // MARK: - Rows
 
     private var raceChips: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LB.Space.sm) {
             ForEach(RaceDistance.allCases) { option in
                 let on = race == option
                 Button {
@@ -138,14 +137,14 @@ struct PaceCalculatorView: View {
                     distanceText = presetText(option)
                 } label: {
                     Text(option.label)
-                        .font(.lbBody(13, .semibold))
+                        .font(.lbBody(.secondary, .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .foregroundStyle(on ? LB.accent : LB.textBright)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, LB.Space.sm)
                         .background(
-                            RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                                 .fill(on ? LB.accentTint() : LB.surfaceTile)
                         )
                 }
@@ -161,13 +160,13 @@ struct PaceCalculatorView: View {
     @ViewBuilder
     private func answerRow(_ value: String?, unit: String?) -> some View {
         if let value {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: LB.Space.xs) {
                 Text(value)
-                    .font(.lbMono(30, .semibold))
+                    .font(.lbMono(.metric, .semibold))
                     .foregroundStyle(LB.accent)
                 if let unit {
                     Text(unit)
-                        .font(.lbBody(15))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
@@ -187,7 +186,7 @@ struct PaceCalculatorView: View {
     }
 
     private func part(_ text: Binding<String>, _ suffix: String, _ field: Field) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: LB.Space.xs) {
             TextField("0", text: text)
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.trailing)
@@ -216,21 +215,21 @@ struct PaceCalculatorView: View {
         }
         let marked = split.isFinish || split.checkpoint != nil
 
-        return HStack(spacing: 10) {
+        return HStack(spacing: LB.Space.sm) {
             Text(title)
-                .font(.lbBody(15, marked ? .semibold : .regular))
+                .font(.lbBody(.body, marked ? .semibold : .regular))
                 .foregroundStyle(marked ? LB.textPrimary : LB.textBright)
             if let tag {
                 LBStatusChip(text: tag, color: LB.accent)
             }
             if let detail {
                 Text(detail)
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
             }
             Spacer()
             Text(PaceCalculator.clock(split.seconds))
-                .font(.lbMono(15, marked ? .semibold : .medium))
+                .font(.lbMono(.value, marked ? .semibold : .medium))
                 .foregroundStyle(split.isFinish ? LB.accent : LB.textPrimary)
         }
         .accessibilityElement(children: .combine)

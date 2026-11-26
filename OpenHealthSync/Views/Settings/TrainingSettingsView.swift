@@ -24,7 +24,7 @@ struct TrainingSettingsView: View {
 
     var body: some View {
         Form {
-            Section("When do you usually run?") {
+            LBSection("When do you usually run?") {
                 Picker("Preferred time", selection: Binding(
                     get: { PreferredRunTime(rawValue: preferredRunTime) ?? .morning },
                     set: { preferredRunTime = $0.rawValue }
@@ -37,7 +37,7 @@ struct TrainingSettingsView: View {
                 .labelsHidden()
             }
 
-            Section {
+            LBSection {
                 Picker("Week starts on", selection: $weekStartsOnMonday) {
                     Text("Monday").tag(true)
                     Text("Sunday").tag(false)
@@ -49,7 +49,7 @@ struct TrainingSettingsView: View {
                 Text("Adds your upcoming runs and strength sessions to a Loopback calendar in the Calendar app and keeps them up to date. Turning this off removes them again.")
             }
 
-            Section {
+            LBSection {
                 Picker("Distance alerts", selection: $distanceAlert) {
                     Text("Off").tag(DistanceAlert.off)
                     Text("Every kilometer").tag(DistanceAlert.kilometer)
@@ -69,7 +69,7 @@ struct TrainingSettingsView: View {
                 Text("Taps your wrist as you pass each distance, like the Workout app does on a plain run. Loopback does this by dividing the run into shorter steps, so your watch counts them (3 of 8) and shows each as its own interval afterwards. Works for steps set by distance, not by time, and not during warmup or cooldown.")
             }
 
-            Section {
+            LBSection {
                 Picker("Distance and pace", selection: $units) {
                     ForEach(DisplayUnits.allCases) { option in
                         Text(option.label).tag(option)
@@ -81,7 +81,6 @@ struct TrainingSettingsView: View {
                 Text("How distances and paces are shown here and on your dashboard, and the units your coach uses. Workouts on your watch and data on your server are unaffected.")
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Training")
         .navigationBarTitleDisplayMode(.inline)

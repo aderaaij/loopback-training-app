@@ -25,7 +25,7 @@ struct ScheduledWorkoutDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: LB.Space.md) {
                 titleHeader
 
                 switch scheduled.plan.workout {
@@ -49,7 +49,7 @@ struct ScheduledWorkoutDetailView: View {
                     changePlansSection(scheduledDate: scheduledDate)
                 }
             }
-            .padding(18)
+            .padding(LB.Space.lg)
         }
         .task {
             // For athletes who share Nutrition; nil too when the server
@@ -86,7 +86,7 @@ struct ScheduledWorkoutDetailView: View {
             displayName: workoutName,
             scheduledDate: scheduledDate
         )
-        return VStack(spacing: 9) {
+        return VStack(spacing: LB.Space.sm) {
             if info.canDoToday {
                 // Acts at once, so no chevron: nothing opens.
                 planRow(
@@ -107,7 +107,7 @@ struct ScheduledWorkoutDetailView: View {
                 changingPlans = info
             }
         }
-        .padding(.top, 4)
+        .padding(.top, LB.Space.xs)
     }
 
     private func planRow(
@@ -118,18 +118,18 @@ struct ScheduledWorkoutDetailView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 13) {
+            HStack(spacing: LB.Space.md) {
                 Image(systemName: icon)
                     .font(.system(size: 18))
                     .frame(width: 32)
                     .foregroundStyle(LB.accent)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: LB.Space.xxs) {
                     Text(title)
-                        .font(.lbBody(15, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text(subtitle)
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textTertiary)
                 }
 
@@ -141,12 +141,12 @@ struct ScheduledWorkoutDetailView: View {
                         .foregroundStyle(LB.textMuted)
                 }
             }
-            .padding(15)
+            .padding(LB.Space.lg)
             .background(
-                RoundedRectangle(cornerRadius: LB.rInner, style: .continuous).fill(LB.optionOff)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.optionOff)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: LB.rInner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).strokeBorder(LB.line, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -166,10 +166,10 @@ struct ScheduledWorkoutDetailView: View {
     // MARK: - Header
 
     private var titleHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
+            HStack(alignment: .top, spacing: LB.Space.sm) {
                 Text(workoutName)
-                    .font(.lbDisplay(24, .bold))
+                    .font(.lbDisplay(.title, .bold))
                     .tracking(-0.6)
                     .foregroundStyle(LB.textPrimary)
                 Spacer()
@@ -179,7 +179,7 @@ struct ScheduledWorkoutDetailView: View {
                 )
             }
             Text(metaLine)
-                .font(.lbMono(11))
+                .font(.lbMono(.caption))
                 .foregroundStyle(LB.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,49 +263,97 @@ struct ScheduledWorkoutDetailView: View {
     private func unavailableSection(text: String) -> some View {
         LBDetailSection(title: "Workout") {
             Text(text)
-                .font(.lbBody(14))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
         }
     }
 
     // MARK: - Custom Workout
 
-    @ViewBuilder
+    /// The whole session as one list, top to bottom in the order it is run:
+    /// warmup, each block, cooldown. A card per part held one row each.
     private func customWorkoutSections(_ custom: CustomWorkout) -> some View {
-        if let warmup = custom.warmup {
-            LBDetailSection(title: "Warmup") {
-                stepRow(goal: warmup.goal, alert: warmup.alert)
-            }
-        }
+        let hasWarmup = custom.warmup != nil
+        return LBDetailSection(title: "Session") {
+            VStack(alignment: .leading, spacing: 0) {
+                if let warmup = custom.warmup {
+                    phaseRow(name: "Warmup", goal: warmup.goal, alert: warmup.alert)
+                }
 
-        ForEach(Array(custom.blocks.enumerated()), id: \.offset) { index, block in
-            LBDetailSection(
-                title: "Block \(index + 1)",
-                trailing: blockTrailing(block)
-            ) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(block.steps.enumerated()), id: \.offset) { stepIndex, intervalStep in
-                        if stepIndex > 0 {
-                            Rectangle().fill(LB.line).frame(height: 1)
-                        }
-                        intervalStepRow(intervalStep)
+                ForEach(Array(custom.blocks.enumerated()), id: \.offset) { index, block in
+                    if hasWarmup || index > 0 {
+                        Rectangle().fill(LB.line).frame(height: 1)
                     }
+                    blockRows(block, number: index + 1, of: custom.blocks.count)
+                }
+
+                if let cooldown = custom.cooldown {
+                    if hasWarmup || !custom.blocks.isEmpty {
+                        Rectangle().fill(LB.line).frame(height: 1)
+                    }
+                    phaseRow(name: "Cooldown", goal: cooldown.goal, alert: cooldown.alert)
                 }
             }
+            // The first and last rows bring their own padding; the card
+            // already has some.
+            .padding(.vertical, -LB.Space.md)
         }
+    }
 
-        if let cooldown = custom.cooldown {
-            LBDetailSection(title: "Cooldown") {
-                stepRow(goal: cooldown.goal, alert: cooldown.alert)
+    /// One block: a caption when it repeats or there are several, then its steps.
+    @ViewBuilder
+    private func blockRows(_ block: IntervalBlock, number: Int, of count: Int) -> some View {
+        let trailing = blockTrailing(block)
+        VStack(alignment: .leading, spacing: 0) {
+            if count > 1 || trailing != nil {
+                HStack {
+                    Text(count > 1 ? "BLOCK \(number)" : "MAIN SET")
+                    Spacer()
+                    if let trailing {
+                        Text(trailing)
+                    }
+                }
+                .font(.lbMono(.caption))
+                .tracking(0.4)
+                .foregroundStyle(LB.textTertiary)
+                .padding(.top, LB.Space.md)
+            }
+            ForEach(Array(block.steps.enumerated()), id: \.offset) { _, intervalStep in
+                intervalStepRow(intervalStep)
             }
         }
+    }
+
+    /// Warmup or cooldown, drawn like a step so the list reads as one column.
+    private func phaseRow(name: String, goal: WorkoutGoal, alert: (any WorkoutAlert)?) -> some View {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
+            HStack {
+                HStack(spacing: LB.Space.sm) {
+                    Circle()
+                        .fill(LB.textMuted)
+                        .frame(width: 8, height: 8)
+                    Text(name)
+                        .font(.lbBody(.body, .semibold))
+                        .foregroundStyle(LB.textPrimary)
+                }
+                Spacer()
+                Text(formatGoal(goal))
+                    .font(.lbMono(.value))
+                    .foregroundStyle(LB.textBright)
+            }
+
+            if let alert {
+                alertLabel(alert)
+            }
+        }
+        .padding(.vertical, LB.Space.md)
     }
 
     // MARK: - Goal Workout
 
     private func goalWorkoutSection(_ goal: SingleGoalWorkout) -> some View {
         LBDetailSection(title: "Goal") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: LB.Space.sm) {
                 detailRow(label: "Activity", value: goal.activity.displayName)
                 goalRow(goal.goal)
             }
@@ -316,7 +364,7 @@ struct ScheduledWorkoutDetailView: View {
 
     private func pacerWorkoutSection(_ pacer: PacerWorkout) -> some View {
         LBDetailSection(title: "Pacer") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: LB.Space.sm) {
                 detailRow(label: "Activity", value: pacer.activity.displayName)
                 detailRow(label: "Distance", value: formatMeasurement(pacer.distance))
                 detailRow(label: "Time", value: formatDuration(pacer.time))
@@ -328,12 +376,12 @@ struct ScheduledWorkoutDetailView: View {
     // MARK: - Interval Step Row
 
     private func intervalStepRow(_ intervalStep: IntervalStep) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: LB.Space.xs) {
             HStack {
                 purposeLabel(intervalStep.purpose)
                 Spacer()
                 Text(formatGoal(intervalStep.step.goal))
-                    .font(.lbMono(12))
+                    .font(.lbMono(.value))
                     .foregroundStyle(LB.textBright)
             }
 
@@ -341,19 +389,7 @@ struct ScheduledWorkoutDetailView: View {
                 alertLabel(alert)
             }
         }
-        .padding(.vertical, 10)
-    }
-
-    // MARK: - Simple Step Row (warmup/cooldown)
-
-    private func stepRow(goal: WorkoutGoal, alert: (any WorkoutAlert)?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            goalRow(goal)
-
-            if let alert {
-                alertLabel(alert)
-            }
-        }
+        .padding(.vertical, LB.Space.md)
     }
 
     // MARK: - Labeled Rows
@@ -365,11 +401,11 @@ struct ScheduledWorkoutDetailView: View {
     private func detailRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .font(.lbBody(14))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
             Spacer()
             Text(value)
-                .font(.lbMono(12))
+                .font(.lbMono(.value))
                 .foregroundStyle(LB.textBright)
         }
     }
@@ -377,12 +413,12 @@ struct ScheduledWorkoutDetailView: View {
     // MARK: - Purpose Label
 
     private func purposeLabel(_ purpose: IntervalStep.Purpose) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LB.Space.sm) {
             Circle()
                 .fill(purpose == .work ? LB.red : LB.blue)
                 .frame(width: 8, height: 8)
             Text(purpose == .work ? "Work" : "Recovery")
-                .font(.lbBody(14, .semibold))
+                .font(.lbBody(.body, .semibold))
                 .foregroundStyle(LB.textPrimary)
         }
     }
@@ -390,12 +426,12 @@ struct ScheduledWorkoutDetailView: View {
     // MARK: - Alert Label
 
     private func alertLabel(_ alert: any WorkoutAlert) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: LB.Space.xs) {
             Image(systemName: alertIconName(alert))
                 .font(.system(size: 11))
                 .foregroundStyle(LB.amber)
             Text(formatAlert(alert))
-                .font(.lbMono(11))
+                .font(.lbMono(.caption))
                 .foregroundStyle(LB.textTertiary)
         }
     }

@@ -49,7 +49,7 @@ struct SyncSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            LBSection {
                 ForEach(DataDomains.ordered, id: \.rawValue) { domain in
                     domainRow(domain)
                 }
@@ -59,7 +59,7 @@ struct SyncSettingsView: View {
                 Text("Your coach can only see — and only reason about — the data you share here. Turning something off stops it syncing and removes its tools from the coach; what's already on your server stays until you delete it there.")
             }
 
-            Section {
+            LBSection {
                 Picker("Workout history", selection: $workoutHistory) {
                     ForEach(WorkoutHistoryWindow.allCases) { window in
                         Text(window.label).tag(window)
@@ -75,7 +75,7 @@ struct SyncSettingsView: View {
                 historySection
             }
 
-            Section {
+            LBSection {
                 TextField("Fallback URL (optional)", text: $alternativeURLText)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
@@ -86,7 +86,6 @@ struct SyncSettingsView: View {
                 Text("Second route to the same server — e.g. its LAN address when the primary URL goes through Tailscale. When the primary can't be reached, requests retry here automatically. Include the scheme, like http://192.168.1.20:8000.")
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Sync")
         .navigationBarTitleDisplayMode(.inline)
@@ -102,9 +101,9 @@ struct SyncSettingsView: View {
 
     @ViewBuilder
     private func domainRow(_ domain: DataDomains) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 13) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
+            HStack(spacing: LB.Space.md) {
+                RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                     .fill(domain.tint.opacity(0.16))
                     .frame(width: 36, height: 36)
                     .overlay(
@@ -114,12 +113,12 @@ struct SyncSettingsView: View {
                     )
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: LB.Space.xs) {
                     Text(domain.title)
-                        .font(.lbDisplay(15, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Text(domain.subtitle)
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -131,7 +130,7 @@ struct SyncSettingsView: View {
                     // which is the whole app. Saying so is more honest than
                     // offering a switch that can't be flipped.
                     Text("Always")
-                        .font(.lbMono(10.5))
+                        .font(.lbMono(.caption))
                         .tracking(0.8)
                         .foregroundStyle(LB.textMuted)
                 } else {
@@ -143,19 +142,19 @@ struct SyncSettingsView: View {
 
             if let note = evidenceNote(for: domain) {
                 Text(note.text)
-                    .font(.lbBody(11.5))
+                    .font(.lbBody(.caption))
                     .foregroundStyle(note.isWarning ? LB.amber : LB.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if note.isWarning {
                     Button("Open Apple Health") { openHealthApp() }
-                        .font(.lbBody(11.5, .semibold))
+                        .font(.lbBody(.caption, .semibold))
                         .foregroundStyle(domain.tint)
                         .buttonStyle(.plain)
                 }
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, LB.Space.xs)
     }
 
     private func binding(for domain: DataDomains) -> Binding<Bool> {
@@ -219,7 +218,7 @@ struct SyncSettingsView: View {
     // MARK: - History
 
     private var historySection: some View {
-        Section {
+        LBSection {
             Button {
                 runBackfill()
             } label: {
@@ -238,7 +237,7 @@ struct SyncSettingsView: View {
                 Text(stored > 0
                      ? "Done — \(stored) new sleep sample\(stored == 1 ? "" : "s") stored and daily totals rebuilt."
                      : "Done — daily totals rebuilt; the server already had every sleep sample.")
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(.secondary)
                 // Only meaningful when nutrition is shared: with it off the
                 // backfill skips that leg entirely, and nil means "not
@@ -248,17 +247,17 @@ struct SyncSettingsView: View {
                         Text(nutritionDays > 0
                              ? "Uploaded \(nutritionDays) day\(nutritionDays == 1 ? "" : "s") of logged food."
                              : "No food logged in Apple Health over that period — or Nutrition isn't shared with Loopback.")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.secondary)
                     } else {
                         Text("Nutrition couldn't be uploaded; everything else landed. Try again later.")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(LB.amber)
                     }
                 }
             case .failed:
                 Text("Upload failed. Check the server connection and try again.")
-                    .font(.caption)
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.red)
             default:
                 EmptyView()

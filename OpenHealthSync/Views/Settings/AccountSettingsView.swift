@@ -30,7 +30,7 @@ struct AccountSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Account") {
+            LBSection("Account") {
                 HStack {
                     Text("Signed in as")
                     Spacer()
@@ -45,7 +45,7 @@ struct AccountSettingsView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text(session.serverURL)
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -57,18 +57,18 @@ struct AccountSettingsView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("v\(version.description)")
-                            .font(.caption)
+                            .font(.lbBody(.secondary))
                             .foregroundStyle(.secondary)
                     }
                 }
                 if let note = session.serverCompatibility.message {
                     Label(note, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(session.serverCompatibility.isSevere ? LB.amber : .secondary)
                 }
             }
 
-            Section {
+            LBSection {
                 trainingAPIFields
 
                 Button { save() } label: { saveButtonLabel("Save & Reconnect") }
@@ -81,7 +81,7 @@ struct AccountSettingsView: View {
                 Text("Paste a new token to switch credentials without signing out.")
             }
 
-            Section {
+            LBSection {
                 Button("Sign Out", role: .destructive) {
                     onSignOut()
                 }
@@ -89,7 +89,6 @@ struct AccountSettingsView: View {
                 Text("Signs out this device and returns to the login screen.")
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
@@ -160,7 +159,7 @@ struct AccountSettingsView: View {
 
     @ViewBuilder
     private func saveButtonLabel(_ title: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LB.Space.sm) {
             if status == .connecting {
                 ProgressView()
                     .controlSize(.small)
@@ -177,11 +176,11 @@ struct AccountSettingsView: View {
             EmptyView()
         case .connected:
             Label("Connected", systemImage: "checkmark.circle.fill")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.green)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .font(.lbBody(.secondary))
                 .foregroundStyle(.red)
         }
     }

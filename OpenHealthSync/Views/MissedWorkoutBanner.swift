@@ -18,26 +18,26 @@ struct MissedWorkoutBanner: View {
 
     var body: some View {
         if !detector.missedWorkouts.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: LB.Space.md) {
+                HStack(alignment: .top, spacing: LB.Space.md) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(LB.amber)
                         .font(.system(size: 22))
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: LB.Space.xs) {
                         if detector.missedWorkouts.count == 1, let workout = detector.missedWorkouts.first {
                             Text("You missed \(workout.displayName)")
-                                .font(.lbDisplay(15, .semibold))
+                                .font(.lbDisplay(.subheadline, .semibold))
                                 .foregroundStyle(LB.textPrimary)
                             Text(relativeDate(workout.scheduledDate))
-                                .font(.lbBody(12))
+                                .font(.lbBody(.secondary))
                                 .foregroundStyle(LB.textTertiary)
                         } else {
                             Text("You have \(detector.missedWorkouts.count) missed workouts")
-                                .font(.lbDisplay(15, .semibold))
+                                .font(.lbDisplay(.subheadline, .semibold))
                                 .foregroundStyle(LB.textPrimary)
                             Text("Want to check in?")
-                                .font(.lbBody(12))
+                                .font(.lbBody(.secondary))
                                 .foregroundStyle(LB.textTertiary)
                         }
                     }
@@ -58,17 +58,17 @@ struct MissedWorkoutBanner: View {
                     showFeedbackSheet = true
                 } label: {
                     Text("Check in")
-                        .font(.lbBody(14, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.bg)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
+                        .padding(.vertical, LB.Space.md)
                         .background(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous).fill(LB.amber)
+                            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.amber)
                         )
                 }
                 .buttonStyle(.plain)
             }
-            .padding(16)
+            .padding(LB.Space.lg)
             .cardStyle(tint: LB.amber)
             .sheet(isPresented: $showFeedbackSheet) {
                 MissedWorkoutFeedbackFlow(

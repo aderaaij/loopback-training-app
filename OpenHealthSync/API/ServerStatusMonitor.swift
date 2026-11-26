@@ -110,7 +110,7 @@ struct ServerRedirectNote: View {
                     : "The server address redirects to \(target), and your sign-in doesn't travel with a redirect. Sign out, then sign in with that address.",
                 systemImage: "exclamationmark.triangle.fill"
             )
-            .font(.caption)
+            .font(.lbBody(.secondary))
             .foregroundStyle(LB.amber)
         }
     }

@@ -49,18 +49,18 @@ struct PlanOverviewCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.bottom, 18)
+                .padding(.bottom, LB.Space.lg)
 
             if totalCount > 0 {
                 segmentedProgress
-                    .padding(.bottom, 16)
+                    .padding(.bottom, LB.Space.lg)
             }
 
             currentPhaseRow
 
             if let phases = plan.metadata?.phases, !phases.isEmpty {
                 phasePills(phases)
-                    .padding(.top, 12)
+                    .padding(.top, LB.Space.md)
             }
 
             if let index = selectedPhaseIndex,
@@ -68,9 +68,9 @@ struct PlanOverviewCard: View {
                 phaseDetail(phases[index])
             }
         }
-        .padding(20)
+        .padding(LB.Space.heroInset)
         .background(
-            RoundedRectangle(cornerRadius: LB.rHero, style: .continuous)
+            RoundedRectangle(cornerRadius: LB.Radius.card, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [LB.heroTop, LB.heroBottom],
@@ -78,10 +78,10 @@ struct PlanOverviewCard: View {
                     )
                 )
                 .overlay(LBCornerTicks())
-                .clipShape(RoundedRectangle(cornerRadius: LB.rHero, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LB.Radius.card, style: .continuous))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: LB.rHero, style: .continuous)
+            RoundedRectangle(cornerRadius: LB.Radius.card, style: .continuous)
                 .strokeBorder(LB.textPrimary.opacity(0.09), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.45), radius: 17, x: 0, y: 16)
@@ -91,31 +91,31 @@ struct PlanOverviewCard: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(plan.name)
-                    .font(.lbDisplay(23, .semibold))
+                    .font(.lbDisplay(.headline, .semibold))
                     .tracking(-0.4)
                     .foregroundStyle(LB.textPrimary)
                 if let dateRange {
                     Text(dateRange)
-                        .font(.lbMono(12))
+                        .font(.lbMono(.caption))
                         .tracking(-0.3)
                         .foregroundStyle(LB.textTertiary)
                 }
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 5) {
+            VStack(alignment: .trailing, spacing: LB.Space.xs) {
                 // Strength cycles have no queue workouts — a "0/0" reads broken.
                 if totalCount > 0 {
                     HStack(spacing: 0) {
                         Text("\(completedCount)").foregroundStyle(LB.accent)
                         Text("/\(totalCount)").foregroundStyle(LB.textMuted)
                     }
-                    .font(.lbMono(26, .semibold))
+                    .font(.lbMono(.metric, .semibold))
                 }
                 if let currentWeek = plan.currentWeek, let totalWeeks = plan.totalWeeks {
                     Text("WEEK \(currentWeek + 1)/\(totalWeeks)")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .tracking(0.5)
                         .foregroundStyle(LB.textTertiary)
                 }
@@ -141,7 +141,7 @@ struct PlanOverviewCard: View {
                     ForEach(0..<totalCount, id: \.self) { i in
                         let isDone = i < completedCount
                         let isCurrent = i == completedCount && completedCount < totalCount
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.bar, style: .continuous)
                             .fill(isDone ? LB.green : (isCurrent ? LB.accent : LB.trackEmpty))
                             .frame(width: segmentWidth)
                             .shadow(color: isCurrent ? LB.accent.opacity(0.6) : .clear, radius: 5)
@@ -151,13 +151,13 @@ struct PlanOverviewCard: View {
                 let done = geo.size.width * completionFraction
                 let marker = min(max(geo.size.width / CGFloat(count), 6), geo.size.width - done)
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.bar, style: .continuous)
                         .fill(LB.trackEmpty)
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.bar, style: .continuous)
                         .fill(LB.green)
                         .frame(width: done)
                     if completedCount < totalCount {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.bar, style: .continuous)
                             .fill(LB.accent)
                             .frame(width: marker)
                             .offset(x: done)
@@ -174,16 +174,16 @@ struct PlanOverviewCard: View {
     @ViewBuilder
     private var currentPhaseRow: some View {
         if let phase = plan.currentPhase {
-            HStack(spacing: 8) {
+            HStack(spacing: LB.Space.sm) {
                 Image(systemName: "figure.run")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(LB.accent)
                 Text("Current phase")
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .tracking(0.3)
                     .foregroundStyle(LB.textTertiary)
                 Text("· \(phase.name)")
-                    .font(.lbBody(13, .semibold))
+                    .font(.lbBody(.secondary, .semibold))
                     .foregroundStyle(LB.textPrimary)
                     .lineLimit(1)
             }
@@ -196,7 +196,7 @@ struct PlanOverviewCard: View {
     private func phasePills(_ phases: [PlanPhase]) -> some View {
         let currentWeek = plan.currentWeek ?? -1
 
-        FlowLayout(spacing: 7) {
+        FlowLayout(spacing: LB.Space.sm) {
             ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
                 let isCurrent = phase.weeks.contains(currentWeek)
                 let isSelected = selectedPhaseIndex == index
@@ -208,16 +208,16 @@ struct PlanOverviewCard: View {
                     }
                 } label: {
                     Text(phase.name)
-                        .font(.lbBody(13, highlight ? .semibold : .medium))
+                        .font(.lbBody(.secondary, highlight ? .semibold : .medium))
                         .foregroundStyle(highlight ? LB.accent : LB.textTertiary)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
+                        .padding(.horizontal, LB.Space.md)
+                        .padding(.vertical, LB.Space.sm)
                         .background(
-                            RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                                 .fill(highlight ? LB.accentTint() : LB.surfaceTile)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                            RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                                 .strokeBorder(highlight ? LB.accent.opacity(0.4) : .clear, lineWidth: 1)
                         )
                 }
@@ -230,61 +230,61 @@ struct PlanOverviewCard: View {
 
     @ViewBuilder
     private func phaseDetail(_ phase: PlanPhase) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Rectangle().fill(LB.line).frame(height: 1).padding(.vertical, 4)
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
+            Rectangle().fill(LB.line).frame(height: 1).padding(.vertical, LB.Space.xs)
 
             HStack {
                 Text(phase.name)
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(LB.textPrimary)
                 Spacer()
                 if phase.weeks.count == 1 {
                     Text("Week \(phase.weeks[0] + 1)")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 } else if let first = phase.weeks.first, let last = phase.weeks.last {
                     Text("Weeks \(first + 1)–\(last + 1)")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
 
             if let volume = phase.volumeTargetKm {
-                HStack(spacing: 5) {
+                HStack(spacing: LB.Space.xs) {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(LB.accent)
                     Text("Target: \(Int(units.distanceValue(km: volume).rounded())) \(units.distanceUnit)/week")
-                        .font(.lbBody(13))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.textSecondary)
                 }
             }
 
             if let notes = phase.notes {
                 Text(notes)
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textSecondary)
             }
 
             let phaseWorkouts = workoutsInPhase(phase)
             if !phaseWorkouts.isEmpty {
-                VStack(spacing: 4) {
+                VStack(spacing: LB.Space.xs) {
                     ForEach(phaseWorkouts) { workout in
-                        HStack(spacing: 7) {
+                        HStack(spacing: LB.Space.sm) {
                             Image(systemName: workout.status == "completed" ? "checkmark.circle.fill" : "circle")
                                 .font(.system(size: 12))
                                 .foregroundStyle(workout.status == "completed" ? LB.green : LB.textMuted)
                             Text(workout.title)
-                                .font(.lbBody(13))
+                                .font(.lbBody(.secondary))
                                 .foregroundStyle(workout.status == "completed" ? LB.textPrimary : LB.textSecondary)
                             Spacer()
                         }
                     }
                 }
-                .padding(.top, 2)
+                .padding(.top, LB.Space.xxs)
             }
         }
-        .padding(.top, 8)
+        .padding(.top, LB.Space.sm)
     }
 
     /// Find plan workouts that fall within a phase's week range.
@@ -308,16 +308,16 @@ struct PlanOverviewCard: View {
 
 struct PlanLoadingPlaceholder: View {
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: LB.Space.md) {
             ProgressView()
                 .controlSize(.small)
                 .tint(LB.accent)
             Text("Loading training plan…")
-                .font(.lbBody(15))
+                .font(.lbBody(.body))
                 .foregroundStyle(LB.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(LB.Space.lg)
         .lbCard()
     }
 }

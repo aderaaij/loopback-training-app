@@ -178,28 +178,28 @@ struct NutritionTrendsView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: LB.Space.md) {
                 averagesTiles
                 macroCard
                 energyCard
                 loggingCard
                 Text("Intake comes from whichever app writes food to Apple Health, and self-reported logging typically runs low. Today is excluded from averages until the day is complete.")
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, LB.Space.xs)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.horizontal, LB.Space.lg)
+            .padding(.vertical, LB.Space.md)
         }
     }
 
     // MARK: - Averages
 
     private var averagesTiles: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
             LBSectionHeader(title: "Last \(Self.recentDays) days")
-            HStack(spacing: 10) {
+            LBTileRow {
                 LBTrendTile(value: avgEnergy.map { formatInt($0) } ?? "—", label: "kcal/day")
                 LBTrendTile(value: avgProtein.map { formatInt($0) } ?? "—", label: "g protein")
                 LBTrendTile(
@@ -209,9 +209,9 @@ struct NutritionTrendsView: View {
             }
             if proteinPerKg == nil, avgProtein != nil {
                 Text("Protein per kilo needs a recent weight in Apple Health.")
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textMuted)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, LB.Space.xs)
             }
         }
     }
@@ -219,7 +219,7 @@ struct NutritionTrendsView: View {
     // MARK: - Macro split
 
     private var macroCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "Macros per day")
             if let carbs = avgCarbs, let protein = avgProtein, let fat = avgFat {
                 // Shares are computed from grams via 4/4/9 kcal, not from
@@ -228,7 +228,7 @@ struct NutritionTrendsView: View {
                 let kcal = [carbs * 4, protein * 4, fat * 9]
                 let total = kcal.reduce(0, +)
                 macroBar(shares: total > 0 ? kcal.map { $0 / total } : [0, 0, 0])
-                VStack(spacing: 8) {
+                VStack(spacing: LB.Space.sm) {
                     macroRow(label: "Carbs", grams: carbs, share: total > 0 ? kcal[0] / total : nil, color: LB.amber)
                     macroRow(label: "Protein", grams: protein, share: total > 0 ? kcal[1] / total : nil, color: LB.blue)
                     macroRow(label: "Fat", grams: fat, share: total > 0 ? kcal[2] / total : nil, color: LB.violet)
@@ -238,11 +238,11 @@ struct NutritionTrendsView: View {
                 }
             } else {
                 Text("No macro breakdown in the last \(Self.recentDays) complete days.")
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textSecondary)
             }
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
@@ -250,7 +250,7 @@ struct NutritionTrendsView: View {
     private func macroBar(shares: [Double]) -> some View {
         let colors = [LB.amber, LB.blue, LB.violet]
         return GeometryReader { geo in
-            HStack(spacing: 2) {
+            HStack(spacing: LB.Space.xxs) {
                 ForEach(Array(shares.enumerated()), id: \.offset) { index, share in
                     Capsule(style: .continuous)
                         .fill(colors[index])
@@ -262,21 +262,21 @@ struct NutritionTrendsView: View {
     }
 
     private func macroRow(label: String, grams: Double, share: Double?, color: Color) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LB.Space.sm) {
             Circle()
                 .fill(color)
                 .frame(width: 7, height: 7)
             Text(label)
-                .font(.lbBody(13))
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.textSecondary)
             Spacer()
             if let share {
                 Text("\(Int((share * 100).rounded()))%")
-                    .font(.lbMono(12))
+                    .font(.lbMono(.value))
                     .foregroundStyle(LB.textTertiary)
             }
             Text("\(formatInt(grams)) g")
-                .font(.lbMono(13, .semibold))
+                .font(.lbMono(.value, .semibold))
                 .foregroundStyle(LB.textPrimary)
                 .frame(minWidth: 58, alignment: .trailing)
         }
@@ -292,25 +292,25 @@ struct NutritionTrendsView: View {
         let values = series.compactMap { $0.row?.energyKcal }
         let maxKcal = values.max() ?? 0
 
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: LB.Space.md) {
             HStack {
                 LBSectionHeader(title: "Daily energy")
                 Text("\(Self.chartDays) days")
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textMuted)
             }
-            HStack(alignment: .bottom, spacing: 4) {
+            HStack(alignment: .bottom, spacing: LB.Space.xs) {
                 ForEach(series, id: \.date) { entry in
                     energyBar(date: entry.date, row: entry.row, maxKcal: maxKcal)
                 }
             }
             if let peak = values.max() {
                 Text("Peak \(formatInt(peak)) kcal. Gaps are days with nothing logged — not days with nothing eaten.")
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textMuted)
             }
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
@@ -324,14 +324,14 @@ struct NutritionTrendsView: View {
             ? LB.trackEmpty
             : (row?.isPartial == true ? LB.accentTint(0.45) : LB.accent)
 
-        return VStack(spacing: 6) {
-            UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
+        return VStack(spacing: LB.Space.xs) {
+            UnevenRoundedRectangle(topLeadingRadius: LB.Radius.bar, topTrailingRadius: LB.Radius.bar)
                 .fill(fill)
                 .frame(height: kcal.map { value in
                     max(6, maxBarHeight * CGFloat(value) / CGFloat(max(maxKcal, 1)))
                 } ?? 3)
             Text(Self.weekdayFormatter.string(from: date).uppercased())
-                .font(.lbMono(9))
+                .font(.lbMono(.caption))
                 .foregroundStyle(LB.textTertiary)
         }
         .frame(maxWidth: .infinity)
@@ -340,9 +340,9 @@ struct NutritionTrendsView: View {
     // MARK: - Logging adherence
 
     private var loggingCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "Logging")
-            HStack(spacing: 10) {
+            LBTileRow {
                 LBTrendTile(
                     value: "\(recentLoggedCount)/\(Self.recentDays)",
                     label: "Days logged",
@@ -356,9 +356,9 @@ struct NutritionTrendsView: View {
             }
             if !sources.isEmpty {
                 Text("Logged in \(sources.joined(separator: ", ")).")
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textMuted)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, LB.Space.xs)
             }
         }
     }
@@ -378,18 +378,18 @@ struct NutritionTrendsView: View {
             Button {
                 Task { await syncNow() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: LB.Space.sm) {
                     if isSyncing {
                         ProgressView().tint(LB.accent)
                     }
                     Text(isSyncing ? "Syncing…" : "Check access & sync")
-                        .font(.lbBody(14, .semibold))
+                        .font(.lbBody(.body, .semibold))
                         .foregroundStyle(LB.accent)
                 }
-                .padding(.horizontal, 22)
-                .padding(.vertical, 9)
+                .padding(.horizontal, LB.Space.xl)
+                .padding(.vertical, LB.Space.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                         .fill(LB.accentTint())
                 )
             }
@@ -399,35 +399,35 @@ struct NutritionTrendsView: View {
     }
 
     private var errorCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: LB.Space.md) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 28))
                 .foregroundStyle(LB.textTertiary)
             Text("Couldn't load intake")
-                .font(.lbDisplay(16, .semibold))
+                .font(.lbDisplay(.subheadline, .semibold))
                 .foregroundStyle(LB.textPrimary)
             Text("Check your connection to the training server and try again.")
-                .font(.lbBody(13))
+                .font(.lbBody(.secondary))
                 .foregroundStyle(LB.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 Task { await load() }
             } label: {
                 Text("Retry")
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(LB.accent)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, LB.Space.xl)
+                    .padding(.vertical, LB.Space.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                        RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                             .fill(LB.accentTint())
                     )
             }
             .buttonStyle(.plain)
         }
-        .padding(24)
+        .padding(LB.Space.xl)
         .lbCard()
-        .padding(.horizontal)
+        .padding(.horizontal, LB.Space.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

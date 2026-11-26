@@ -26,7 +26,7 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Preferences") {
+                LBSection("Preferences") {
                     NavigationLink {
                         AccountSettingsView(
                             session: session,
@@ -112,15 +112,15 @@ struct SettingsSheet: View {
                         )
                     }
                 }
-                .listRowBackground(LB.surface)
 
-                Section {
+                LBSection(bare: true) {
                     brandFooter
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
                 }
             }
             .lbList()
+            .lbNavigationBarMargins()
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -138,21 +138,21 @@ struct SettingsSheet: View {
     // MARK: - Brand Footer
 
     private var brandFooter: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: LB.Space.md) {
             Image("Logo")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 96)
             Text("Loopback")
-                .font(.lbDisplay(22, .semibold))
+                .font(.lbDisplay(.headline, .semibold))
                 .tracking(-0.4)
                 .foregroundStyle(LB.textPrimary)
             Text("SELF-HOSTED TRAINING · v1.0")
-                .font(.lbMono(10.5))
+                .font(.lbMono(.caption))
                 .tracking(1)
                 .foregroundStyle(LB.textMuted)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 34)
+        .padding(.vertical, LB.Space.xxl)
     }
 }

@@ -74,7 +74,7 @@ struct FuelProductsView: View {
         Form {
             switch store.loadState {
             case .idle, .loading:
-                Section {
+                LBSection {
                     HStack {
                         Spacer()
                         ProgressView()
@@ -82,9 +82,9 @@ struct FuelProductsView: View {
                     }
                 }
             case .failed:
-                Section {
+                LBSection {
                     Text(failureMessage)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.textSecondary)
                     Button("Try Again") {
                         Task { await store.load() }
@@ -94,7 +94,6 @@ struct FuelProductsView: View {
                 loadedSections
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle("Fuelling")
         .navigationBarTitleDisplayMode(.inline)
@@ -120,16 +119,16 @@ struct FuelProductsView: View {
     @ViewBuilder
     private var loadedSections: some View {
         if store.products.isEmpty {
-            Section {
+            LBSection {
                 Text("Save the drinks and gels you take on runs. Logging one after a run, or planning one for a long run, is then a matter of picking it.")
-                    .font(.lbBody(14))
+                    .font(.lbBody(.body))
                     .foregroundStyle(LB.textSecondary)
                 Button("Add a Product") { showingAdd = true }
             }
         } else {
             section("Drinks", store.drinks)
             section("Gels and food", store.items)
-            Section {
+            LBSection {
             } footer: {
                 Text("Log what you took from a workout's screen, and plan a run from the session's screen. Your coach sees both while you share Nutrition.")
             }
@@ -139,7 +138,7 @@ struct FuelProductsView: View {
     @ViewBuilder
     private func section(_ title: String, _ products: [FuelProduct]) -> some View {
         if !products.isEmpty {
-            Section(title) {
+            LBSection(title) {
                 ForEach(products) { product in
                     NavigationLink {
                         FuelProductFormView(product: product)
@@ -164,15 +163,15 @@ struct FuelProductRow: View {
     var isSelected = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: LB.Space.md) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(product.name)
-                    .font(.lbDisplay(15, .semibold))
+                    .font(.lbDisplay(.subheadline, .semibold))
                     .foregroundStyle(LB.textPrimary)
                     .lineLimit(1)
                 if let detail {
                     Text(detail)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
@@ -183,7 +182,7 @@ struct FuelProductRow: View {
                     .foregroundStyle(LB.accent)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, LB.Space.xxs)
         .contentShape(Rectangle())
     }
 
@@ -218,7 +217,7 @@ struct FuelProductFormView: View {
 
     var body: some View {
         Form {
-            Section {
+            LBSection {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.sentences)
                 Picker("Kind", selection: $kind) {
@@ -233,7 +232,7 @@ struct FuelProductFormView: View {
                      : "Logged one at a time, with where in the run you took it.")
             }
 
-            Section {
+            LBSection {
                 if kind == .drink {
                     numberField("Serving", text: $volumeText, unit: "ml")
                 }
@@ -246,7 +245,7 @@ struct FuelProductFormView: View {
             }
 
             if product != nil {
-                Section {
+                LBSection {
                     Button("Delete This Product", role: .destructive) {
                         showingDeleteConfirmation = true
                     }
@@ -256,14 +255,13 @@ struct FuelProductFormView: View {
             }
 
             if let errorMessage {
-                Section {
+                LBSection {
                     Text(errorMessage)
-                        .font(.lbBody(14))
+                        .font(.lbBody(.body))
                         .foregroundStyle(LB.red)
                 }
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle(product == nil ? "New Product" : "Edit Product")
         .navigationBarTitleDisplayMode(.inline)
@@ -372,24 +370,24 @@ struct FuelEntryRow: View {
     var muted = false
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: LB.Space.md) {
             Image(systemName: entry.kind.symbol)
                 .font(.system(size: 13))
                 .foregroundStyle(muted ? LB.textTertiary : LB.green)
                 .frame(width: 30, height: 30)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(LB.surfaceTile)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous).fill(LB.surfaceTile)
                 )
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: LB.Space.xs) {
                 Text(entry.name)
-                    .font(.lbBody(14, .semibold))
+                    .font(.lbBody(.body, .semibold))
                     .foregroundStyle(muted ? LB.textBright : LB.textPrimary)
                     .lineLimit(1)
                 if let figures = FuelFormat.figures(carbsG: entry.carbsG, caffeineMg: entry.caffeineMg) {
                     Text(figures)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
             }
@@ -398,7 +396,7 @@ struct FuelEntryRow: View {
 
             if let trailing {
                 Text(trailing)
-                    .font(.lbMono(13))
+                    .font(.lbMono(.value))
                     .foregroundStyle(muted ? LB.textSecondary : LB.textPrimary)
             }
         }
@@ -459,7 +457,7 @@ struct FuelEntrySheet: View {
             }
 
             if typesFigures {
-                Section {
+                LBSection {
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.sentences)
                     if entry == nil {
@@ -473,7 +471,7 @@ struct FuelEntrySheet: View {
                 }
             }
 
-            Section {
+            LBSection {
                 if effectiveKind == .drink {
                     numberField("Amount", text: $volumeText, unit: "ml")
                 } else {
@@ -488,7 +486,7 @@ struct FuelEntrySheet: View {
             }
 
             if let onDelete {
-                Section {
+                LBSection {
                     Button("Remove", role: .destructive) {
                         onDelete()
                         dismiss()
@@ -496,7 +494,6 @@ struct FuelEntrySheet: View {
                 }
             }
         }
-        .listRowBackground(LB.surface)
         .lbList()
         .navigationTitle(entry == nil ? (isPlan ? "Add to Plan" : "Add to Log") : entry?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
@@ -522,7 +519,7 @@ struct FuelEntrySheet: View {
 
     @ViewBuilder
     private var pickSection: some View {
-        Section {
+        LBSection {
             ForEach(store.products) { product in
                 Button {
                     select(product)
@@ -536,7 +533,7 @@ struct FuelEntrySheet: View {
             } label: {
                 HStack {
                     Text("Something else")
-                        .font(.lbDisplay(15, .semibold))
+                        .font(.lbDisplay(.subheadline, .semibold))
                         .foregroundStyle(LB.textPrimary)
                     Spacer()
                     if productId == nil {
@@ -671,12 +668,12 @@ private struct FuelPillButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.lbBody(13, .semibold))
+                .font(.lbBody(.secondary, .semibold))
                 .foregroundStyle(LB.accent)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 7)
+                .padding(.horizontal, LB.Space.md)
+                .padding(.vertical, LB.Space.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: LB.rPill, style: .continuous)
+                    RoundedRectangle(cornerRadius: LB.Radius.inner, style: .continuous)
                         .fill(LB.accentTint())
                 )
         }
@@ -699,10 +696,10 @@ private struct FuelEditableList: View {
     @State private var sheet: FuelSheetTarget?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             if entries.isEmpty {
                 Text(emptyText)
-                    .font(.lbBody(13))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -716,7 +713,7 @@ private struct FuelEditableList: View {
                 }
                 if let line = FuelFormat.summary(summary) {
                     Text(line)
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textSecondary)
                 }
             }
@@ -764,7 +761,7 @@ struct WorkoutFuelSection: View {
 
     var body: some View {
         LBDetailSection(title: "Fuelling", trailing: trailing) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: LB.Space.md) {
                 FuelEditableList(
                     entries: current.entries,
                     summary: current.summary,
@@ -782,7 +779,7 @@ struct WorkoutFuelSection: View {
 
                 if failed {
                     Text("Couldn't save. Check the connection to your server and try again.")
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.red)
                 }
             }
@@ -796,13 +793,13 @@ struct WorkoutFuelSection: View {
     }
 
     private var plannedBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LB.Space.sm) {
             Rectangle()
                 .fill(LB.line)
                 .frame(height: 1)
 
             Text("PLANNED")
-                .font(.lbBody(11, .bold))
+                .font(.lbBody(.caption, .bold))
                 .tracking(0.4)
                 .foregroundStyle(LB.textTertiary)
 
@@ -811,7 +808,7 @@ struct WorkoutFuelSection: View {
             }
             if let summary = current.plannedSummary, let line = FuelFormat.summary(summary) {
                 Text(line)
-                    .font(.lbMono(11))
+                    .font(.lbMono(.caption))
                     .foregroundStyle(LB.textTertiary)
             }
 
@@ -855,7 +852,7 @@ struct SessionFuelSection: View {
 
     var body: some View {
         LBDetailSection(title: "Fuelling plan") {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: LB.Space.md) {
                 FuelEditableList(
                     entries: current.entries,
                     summary: current.summary,
@@ -866,7 +863,7 @@ struct SessionFuelSection: View {
                 )
                 if failed {
                     Text("Couldn't save. Check the connection to your server and try again.")
-                        .font(.lbBody(12))
+                        .font(.lbBody(.secondary))
                         .foregroundStyle(LB.red)
                 }
             }

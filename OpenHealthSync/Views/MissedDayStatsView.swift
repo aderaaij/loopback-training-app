@@ -104,7 +104,7 @@ struct MissedDayStatsView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(spacing: 14) {
+                    VStack(spacing: LB.Space.md) {
                         summaryTiles
                         weekdayCard
                         if !reasonCounts.isEmpty || dismissedCount > 0 {
@@ -117,8 +117,8 @@ struct MissedDayStatsView: View {
                             historyCard
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, LB.Space.lg)
+                    .padding(.vertical, LB.Space.md)
                 }
             }
         }
@@ -133,31 +133,12 @@ struct MissedDayStatsView: View {
     // MARK: - Summary tiles
 
     private var summaryTiles: some View {
-        HStack(spacing: 10) {
-            statTile(value: "\(totalMissed)", label: "Missed")
-            statTile(value: mostMissedWeekday.map(shortWeekday) ?? "—", label: "Worst day")
-            statTile(value: reasonCounts.first.map { $0.reason.emoji } ?? "—",
-                     label: reasonCounts.first.map { shortReason($0.reason) } ?? "Top reason")
+        LBTileRow {
+            LBTrendTile(value: "\(totalMissed)", label: "Missed")
+            LBTrendTile(value: mostMissedWeekday.map(shortWeekday) ?? "—", label: "Worst day")
+            LBTrendTile(value: reasonCounts.first.map { $0.reason.emoji } ?? "—",
+                        label: reasonCounts.first.map { shortReason($0.reason) } ?? "Top reason")
         }
-    }
-
-    private func statTile(value: String, label: String) -> some View {
-        VStack(spacing: 5) {
-            Text(value)
-                .font(.lbMono(22, .semibold))
-                .foregroundStyle(LB.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label.uppercased())
-                .font(.lbBody(10, .semibold))
-                .tracking(0.5)
-                .foregroundStyle(LB.textTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .lbCard()
     }
 
     private func shortWeekday(_ name: String) -> String {
@@ -180,11 +161,11 @@ struct MissedDayStatsView: View {
     // MARK: - Weekday chart
 
     private var weekdayCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "By day of week")
             weekdayBars
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
@@ -194,20 +175,20 @@ struct MissedDayStatsView: View {
         let maxBarHeight: CGFloat = 88
         let symbols = Calendar.current.shortWeekdaySymbols
 
-        return HStack(alignment: .bottom, spacing: 8) {
+        return HStack(alignment: .bottom, spacing: LB.Space.sm) {
             ForEach(orderedWeekdays, id: \.self) { weekday in
                 let count = countsByWeekday[weekday] ?? 0
-                VStack(spacing: 6) {
+                VStack(spacing: LB.Space.xs) {
                     Text(count > 0 ? "\(count)" : " ")
-                        .font(.lbMono(11))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textSecondary)
-                    UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
+                    UnevenRoundedRectangle(topLeadingRadius: LB.Radius.bar, topTrailingRadius: LB.Radius.bar)
                         .fill(count > 0 ? LB.amber : LB.trackEmpty)
                         .frame(height: count > 0
                                ? max(6, maxBarHeight * CGFloat(count) / CGFloat(max(maxCount, 1)))
                                : 3)
                     Text(String(symbols[weekday - 1].prefix(2)).uppercased())
-                        .font(.lbMono(10))
+                        .font(.lbMono(.caption))
                         .foregroundStyle(LB.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
@@ -220,16 +201,16 @@ struct MissedDayStatsView: View {
     private var reasonsCard: some View {
         let maxReasonCount = reasonCounts.map(\.count).max() ?? 1
 
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "Reasons given")
 
             ForEach(reasonCounts, id: \.reason) { entry in
-                HStack(spacing: 10) {
+                HStack(spacing: LB.Space.sm) {
                     Text(entry.reason.emoji)
                         .font(.system(size: 15))
                         .frame(width: 24)
                     Text(entry.reason.label)
-                        .font(.lbBody(13, .medium))
+                        .font(.lbBody(.secondary, .medium))
                         .foregroundStyle(LB.textPrimary)
                         .frame(width: 110, alignment: .leading)
                         .lineLimit(1)
@@ -244,7 +225,7 @@ struct MissedDayStatsView: View {
                         .frame(maxHeight: .infinity)
                     }
                     Text("\(entry.count)")
-                        .font(.lbMono(13))
+                        .font(.lbMono(.value))
                         .foregroundStyle(LB.textSecondary)
                         .frame(width: 24, alignment: .trailing)
                 }
@@ -253,13 +234,13 @@ struct MissedDayStatsView: View {
 
             if dismissedCount > 0 {
                 Text("\(dismissedCount) dismissed without a reason")
-                    .font(.lbBody(12))
+                    .font(.lbBody(.secondary))
                     .foregroundStyle(LB.textMuted)
             }
 
             if !actionCounts.isEmpty {
                 Rectangle().fill(LB.line).frame(height: 1)
-                HStack(spacing: 8) {
+                HStack(spacing: LB.Space.sm) {
                     ForEach(actionCounts, id: \.action) { entry in
                         LBStatusChip(
                             text: "\(entry.count) \(entry.action.label)",
@@ -269,7 +250,7 @@ struct MissedDayStatsView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
@@ -285,28 +266,28 @@ struct MissedDayStatsView: View {
     // MARK: - Needs check-in
 
     private var needsCheckInCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "Needs check-in")
 
             ForEach(detector.missedWorkouts) { workout in
                 Button {
                     checkInWorkout = workout
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: LB.Space.sm) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 13))
                             .foregroundStyle(LB.amber)
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: LB.Space.xs) {
                             Text(workout.displayName)
-                                .font(.lbBody(13, .medium))
+                                .font(.lbBody(.secondary, .medium))
                                 .foregroundStyle(LB.textPrimary)
                             Text(Self.dayFormatter.string(from: workout.scheduledDate))
-                                .font(.lbMono(11))
+                                .font(.lbMono(.caption))
                                 .foregroundStyle(LB.textTertiary)
                         }
                         Spacer()
                         Text("Check in")
-                            .font(.lbBody(12, .semibold))
+                            .font(.lbBody(.secondary, .semibold))
                             .foregroundStyle(LB.amber)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
@@ -316,7 +297,7 @@ struct MissedDayStatsView: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
@@ -324,18 +305,18 @@ struct MissedDayStatsView: View {
     // MARK: - History
 
     private var historyCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LB.Space.md) {
             LBSectionHeader(title: "History")
 
             ForEach(feedbackEntries) { entry in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: LB.Space.xs) {
+                    HStack(spacing: LB.Space.sm) {
                         Text(Self.dayFormatter.string(from: entry.scheduledDate))
-                            .font(.lbMono(11))
+                            .font(.lbMono(.caption))
                             .foregroundStyle(LB.textTertiary)
                             .frame(width: 78, alignment: .leading)
                         Text(entry.workoutName)
-                            .font(.lbBody(13, .medium))
+                            .font(.lbBody(.secondary, .medium))
                             .foregroundStyle(LB.textPrimary)
                             .lineLimit(1)
                         Spacer()
@@ -346,13 +327,13 @@ struct MissedDayStatsView: View {
                         }
                     }
                     if !entry.dismissed {
-                        HStack(spacing: 5) {
+                        HStack(spacing: LB.Space.xs) {
                             Text("\(entry.reason.emoji) \(entry.reason.label)")
-                                .font(.lbBody(12))
+                                .font(.lbBody(.secondary))
                                 .foregroundStyle(LB.textSecondary)
                             if let note = entry.reasonNote, !note.isEmpty {
                                 Text("— \(note)")
-                                    .font(.lbBody(12))
+                                    .font(.lbBody(.secondary))
                                     .foregroundStyle(LB.textTertiary)
                                     .lineLimit(2)
                             }
@@ -365,7 +346,7 @@ struct MissedDayStatsView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(LB.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lbCard()
     }
