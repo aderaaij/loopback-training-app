@@ -73,7 +73,8 @@ struct LoopbackApp: App {
         _shoeStore = State(initialValue: ShoeStore(apiClient: client))
         let setbacks = SetbackStore(apiClient: client)
         _setbackStore = State(initialValue: setbacks)
-        _fuelStore = State(initialValue: FuelStore(apiClient: client))
+        let fuel = FuelStore(apiClient: client)
+        _fuelStore = State(initialValue: fuel)
         _notificationManager = State(initialValue: nm)
         _backgroundSyncManager = State(initialValue: BackgroundSyncManager(
             workoutManager: wm,
@@ -89,6 +90,7 @@ struct LoopbackApp: App {
         dependencies.add(dependency: wm)
         dependencies.add(dependency: store)
         dependencies.add(dependency: setbacks)
+        dependencies.add(dependency: fuel)
     }
 
     var body: some Scene {
@@ -161,6 +163,11 @@ struct LoopbackApp: App {
             .onChange(of: uploadedWorkoutCount) { _, _ in
                 Task { await shoeStore.load() }
             }
+            // "Log Maurten Gel 100 on my last run" works by Siri knowing the
+            // saved products' names, which it reads when told they changed.
+            .onChange(of: fuelStore.products) { _, _ in
+                LoopbackShortcuts.updateAppShortcutParameters()
+            }
             // Any /api call returning 401 signals a dead session → sign out.
             .onReceive(NotificationCenter.default.publisher(for: .trainingAPIUnauthorized)) { _ in
                 session.handleUnauthorized()
@@ -181,6 +188,9 @@ struct LoopbackApp: App {
                 await UnitsSync.reconcile(with: apiClient)
                 await shoeStore.load()
                 await setbackStore.load()
+                // Has Siri read the saved fuel products once per launch; the
+                // read is the products' own query, which loads them.
+                LoopbackShortcuts.updateAppShortcutParameters()
 
                 await scheduleManager.requestAuthorization()
                 await scheduleManager.loadScheduledWorkouts()
@@ -226,6 +236,9 @@ struct LoopbackApp: App {
             // narrows the coach's tools.
             .onChange(of: domainsRaw) { _, _ in
                 Task { await startHealthPipeline() }
+                // The fuel products are only offered to Siri while Nutrition
+                // is shared.
+                LoopbackShortcuts.updateAppShortcutParameters()
             }
             // Units changed, in Settings or by adopting the account's choice.
             // The second case sends the server its own value back, which it

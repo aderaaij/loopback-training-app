@@ -69,7 +69,14 @@ final class FuelStore {
     /// workout isn't on the server (not synced yet), the server predates
     /// fuelling, or it can't be reached.
     func workoutFuel(workoutId: UUID) async -> WorkoutFuel? {
-        (try? await apiClient.fetchWorkoutFuel(workoutId: workoutId)) ?? nil
+        (try? await loadWorkoutFuel(workoutId: workoutId)) ?? nil
+    }
+
+    /// The same, for a caller that has to tell the two apart: nil when the
+    /// workout isn't on the server or the server predates fuelling, a throw
+    /// when the server can't be reached.
+    func loadWorkoutFuel(workoutId: UUID) async throws -> WorkoutFuel? {
+        try await apiClient.fetchWorkoutFuel(workoutId: workoutId)
     }
 
     func setWorkoutFuel(workoutId: UUID, entries: [FuelEntryDraft]) async throws -> WorkoutFuel {

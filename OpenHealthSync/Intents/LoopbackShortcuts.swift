@@ -72,5 +72,15 @@ struct LoopbackShortcuts: AppShortcutsProvider {
             shortTitle: "Setback Check-In",
             systemImageName: "thermometer.medium"
         )
+        AppShortcut(
+            intent: LogFuelIntent(),
+            phrases: [
+                "Log \(\.$product) on my last run in \(.applicationName)",
+                "Log fuel on my last run in \(.applicationName)",
+                "Log fuel in \(.applicationName)",
+            ],
+            shortTitle: "Log Fuel",
+            systemImageName: "bolt.fill"
+        )
     }
 }

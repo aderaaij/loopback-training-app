@@ -163,6 +163,42 @@ nonisolated struct FuelEntryDraft: Sendable, Equatable {
     }
 }
 
+extension Array where Element == FuelEntryDraft {
+    /// The log with `count` more of `product`. A gel or anything else adds
+    /// that many entries, one a piece. A drink adds that many servings to
+    /// the entry the log already has for it, or starts one: a drink is one
+    /// entry with the total. What was logged before keeps its own figures.
+    /// Nil for a drink saved without a serving size, whose amount can't be
+    /// known.
+    func adding(_ product: FuelProduct, count: Int) -> [FuelEntryDraft]? {
+        let count = Swift.max(count, 1)
+        guard product.kind == .drink else {
+            return self + Array(repeating: FuelEntryDraft(product: product), count: count)
+        }
+        guard let serving = product.volumeMl, serving > 0 else { return nil }
+
+        func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
+        var entries = self
+        let index = entries.firstIndex { $0.kind == .drink && $0.productId == product.id }
+        var entry = index.map { entries[$0] } ?? FuelEntryDraft(
+            productId: product.id, name: product.name, kind: .drink, volumeMl: 0
+        )
+        entry.volumeMl = tenths((entry.volumeMl ?? 0) + serving * Double(count))
+        if let carbs = product.carbsG {
+            entry.carbsG = tenths((entry.carbsG ?? 0) + carbs * Double(count))
+        }
+        if let caffeine = product.caffeineMg {
+            entry.caffeineMg = tenths((entry.caffeineMg ?? 0) + caffeine * Double(count))
+        }
+        if let index {
+            entries[index] = entry
+        } else {
+            entries.append(entry)
+        }
+        return entries
+    }
+}
+
 /// Totals over a list of entries. An entry without a figure counts as zero.
 nonisolated struct FuelSummary: Decodable, Sendable, Equatable {
     let volumeMl: Double
