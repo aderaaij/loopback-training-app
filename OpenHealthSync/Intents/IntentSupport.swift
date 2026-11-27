@@ -33,6 +33,14 @@ nonisolated enum LoopbackIntentError: Error, CustomLocalizedStringResourceConver
     /// The day asked for is outside the two weeks a run can move within, or
     /// is the day the run already sits on.
     case dayNotAvailable(String)
+    /// Fuelling goes to the coach under Nutrition, which isn't shared.
+    case fuellingNotShared
+    /// The run is in Health but hasn't been uploaded, so there is nothing
+    /// on the server to hang a log on.
+    case runNotOnServer
+    case productNotFound
+    /// A drink saved without a serving size.
+    case noServingSize(String)
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -50,6 +58,14 @@ nonisolated enum LoopbackIntentError: Error, CustomLocalizedStringResourceConver
             "\(name) is already planned for today."
         case .dayNotAvailable(let name):
             "\(name) can move to any other day in the next two weeks."
+        case .fuellingNotShared:
+            "Fuelling is logged under Nutrition, which you're not sharing. Switch it on in Loopback's settings first."
+        case .runNotOnServer:
+            "Your last run hasn't reached your server yet. Open Loopback to sync it, then try again."
+        case .productNotFound:
+            "That product is no longer saved."
+        case .noServingSize(let name):
+            "\(name) has no serving size saved, so its amount isn't known. Log it in Loopback."
         }
     }
 }
