@@ -58,11 +58,14 @@ Detects past-due incomplete workouts and collects structured feedback:
 
 ### Siri & Shortcuts
 
-Three actions, available by voice, in Spotlight and in the Shortcuts app:
+Six actions, available by voice, in Spotlight and in the Shortcuts app:
 
 - "What's my next run in Loopback": the next planned run and when, answered from the phone's copy of the watch schedule, so it works offline
 - "How was my last run in Loopback": distance, time and pace of the latest run in Health
 - "Do my next run today in Loopback": brings a later run forward to today, after confirming which one
+- "Move my next run in Loopback": moves a run to another day in the next two weeks, asking for the day and the reason
+- "Skip my next run in Loopback": skips a run, asking for the reason
+- "I'm feeling better in Loopback": today's check-in on an illness or injury that is still going on
 
 ## Requirements
 

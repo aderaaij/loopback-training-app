@@ -356,11 +356,7 @@ struct MissedWorkoutFeedbackSheet: View {
     }
 
     private func trimmedNote(for reason: MissedWorkoutReason) -> String? {
-        guard reason == .other || reason.setbackKind != nil else { return nil }
-        // "Other" has always sent its note, empty or not.
-        if reason == .other { return reasonNote }
-        let trimmed = reasonNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        reason.note(from: reasonNote)
     }
 
     private func notePrompt(for reason: MissedWorkoutReason) -> String {
@@ -399,28 +395,23 @@ struct MissedWorkoutFeedbackSheet: View {
         noteSetbackIfNeeded()
     }
 
-    /// Records a check-in the server has already accepted.
-    private func insertSynced(_ feedback: WorkoutFeedback) {
-        feedback.synced = true
-        modelContext.insert(feedback)
-    }
-
     /// Skips a run that isn't due yet. Unlike a missed-run check-in this
     /// waits for the server: until the server knows, the watch keeps the run.
     private func skipUpcoming() {
-        guard let feedback = makeFeedback(action: .skip) else { return }
+        guard let reason = selectedReason else { return }
         isSaving = true
         saveError = nil
         Task {
             defer { isSaving = false }
             do {
-                try await scheduleManager.skipUpcomingWorkout(feedback.payload)
+                try await scheduleManager.skipUpcoming(
+                    workout, reason: reason, note: trimmedNote(for: reason), modelContext: modelContext
+                )
             } catch {
                 AppLog.scheduling.error("Failed to skip workout \(workout.id, privacy: .public): \(String(describing: error), privacy: .public)")
                 saveError = Self.unsavedMessage
                 return
             }
-            insertSynced(feedback)
             noteSetbackIfNeeded()
             Task { await scheduleManager.refreshAfterPlanChange() }
             onComplete(workout)
@@ -432,30 +423,35 @@ struct MissedWorkoutFeedbackSheet: View {
     /// (locally first, uploaded fire-and-forget); an upcoming one waits for
     /// the server, like a skip.
     private func move(to newDate: Date, skipping others: [MissedWorkoutInfo]) {
-        guard let feedback = makeFeedback(action: .move, newDate: newDate) else { return }
+        guard let reason = selectedReason else { return }
         isSaving = true
         saveError = nil
         Task {
             defer { isSaving = false }
+            let stillOn: [MissedWorkoutInfo]
             if workout.isUpcoming {
                 do {
-                    try await scheduleManager.moveUpcomingWorkout(feedback.payload, to: newDate)
+                    stillOn = try await scheduleManager.moveUpcoming(
+                        workout, to: newDate, reason: reason, note: trimmedNote(for: reason),
+                        skipping: others, modelContext: modelContext
+                    )
                 } catch {
                     AppLog.scheduling.error("Failed to move workout \(workout.id, privacy: .public): \(String(describing: error), privacy: .public)")
                     saveError = Self.unsavedMessage
                     return
                 }
-                insertSynced(feedback)
+                noteSetbackIfNeeded()
             } else {
+                guard let feedback = makeFeedback(action: .move, newDate: newDate) else { return }
                 modelContext.insert(feedback)
                 scheduleManager.feedbackSync.syncFeedback(feedback.payload, feedbackId: feedback.id, modelContext: modelContext)
                 if !(await scheduleManager.rescheduleWorkout(id: workout.id, to: newDate)) {
                     AppLog.scheduling.error("Failed to reschedule workout \(workout.id, privacy: .public) to \(newDate, privacy: .public)")
                 }
+                noteSetbackIfNeeded()
+                stillOn = await scheduleManager.skipToMakeRoom(others, for: workout, modelContext: modelContext)
             }
 
-            noteSetbackIfNeeded()
-            let stillOn = await scheduleManager.skipToMakeRoom(others, for: workout, modelContext: modelContext)
             if workout.isUpcoming || !others.isEmpty {
                 Task { await scheduleManager.refreshAfterPlanChange() }
             }

@@ -43,5 +43,34 @@ struct LoopbackShortcuts: AppShortcutsProvider {
             shortTitle: "Do Run Today",
             systemImageName: "calendar.badge.clock"
         )
+        AppShortcut(
+            intent: MoveRunIntent(),
+            phrases: [
+                "Move my next run in \(.applicationName)",
+                "Move my next \(.applicationName) run",
+                "Reschedule my next run in \(.applicationName)",
+            ],
+            shortTitle: "Move Run",
+            systemImageName: "arrow.right.circle"
+        )
+        AppShortcut(
+            intent: SkipRunIntent(),
+            phrases: [
+                "Skip my next run in \(.applicationName)",
+                "Skip my next \(.applicationName) run",
+            ],
+            shortTitle: "Skip Run",
+            systemImageName: "forward.end"
+        )
+        AppShortcut(
+            intent: SetbackCheckInIntent(),
+            phrases: [
+                "I'm feeling \(\.$status) in \(.applicationName)",
+                "Setback check-in in \(.applicationName)",
+                "Check in with \(.applicationName)",
+            ],
+            shortTitle: "Setback Check-In",
+            systemImageName: "thermometer.medium"
+        )
     }
 }

@@ -877,22 +877,71 @@ class WorkoutScheduleManager {
 
     // MARK: - Change Plans Ahead of Time
 
-    /// Skips a run that isn't due yet. The server hears first: the restore
-    /// pass re-adds any due run the server still expects, so removing it from
-    /// the watch before the skip lands would only bring it back. Throws when
-    /// the server can't be told, and then nothing has changed.
-    func skipUpcomingWorkout(_ feedback: WorkoutFeedbackPayload) async throws {
+    /// Skips a run that isn't due yet, for a reason, and files the check-in.
+    /// Throws when the server can't be told, and then nothing has changed.
+    /// The caller runs `refreshAfterPlanChange()` afterwards.
+    func skipUpcoming(
+        _ workout: MissedWorkoutInfo,
+        reason: MissedWorkoutReason,
+        note: String?,
+        modelContext: ModelContext
+    ) async throws {
+        let feedback = WorkoutFeedback(
+            workoutId: workout.id,
+            workoutName: workout.displayName,
+            scheduledDate: workout.scheduledDate,
+            reason: reason,
+            action: .skip,
+            reasonNote: note
+        )
+        try await skipUpcomingWorkout(feedback.payload)
+        feedback.synced = true
+        modelContext.insert(feedback)
+    }
+
+    /// Moves a run that isn't due yet to `newDate`, for a reason, and files
+    /// the check-in. `others` are the runs on that day to skip to make room;
+    /// the ones the server couldn't be told about are returned, and stay on.
+    /// Throws when the server can't be told about the move itself, and then
+    /// nothing has changed. The caller runs `refreshAfterPlanChange()`
+    /// afterwards.
+    func moveUpcoming(
+        _ workout: MissedWorkoutInfo,
+        to newDate: Date,
+        reason: MissedWorkoutReason,
+        note: String?,
+        skipping others: [MissedWorkoutInfo],
+        modelContext: ModelContext
+    ) async throws -> [MissedWorkoutInfo] {
+        let feedback = WorkoutFeedback(
+            workoutId: workout.id,
+            workoutName: workout.displayName,
+            scheduledDate: workout.scheduledDate,
+            reason: reason,
+            action: .move,
+            reasonNote: note,
+            newDate: newDate
+        )
+        try await moveUpcomingWorkout(feedback.payload, to: newDate)
+        feedback.synced = true
+        modelContext.insert(feedback)
+        return await skipToMakeRoom(others, for: workout, modelContext: modelContext)
+    }
+
+    /// The server hears first: the restore pass re-adds any due run the
+    /// server still expects, so removing it from the watch before the skip
+    /// lands would only bring it back.
+    private func skipUpcomingWorkout(_ feedback: WorkoutFeedbackPayload) async throws {
         try await apiClient.submitFeedback(feedback)
         if !(await removeWorkout(id: feedback.workoutId)) {
             AppLog.scheduling.warning("Skipped workout \(feedback.workoutId, privacy: .public) on the server but couldn't remove it from the watch")
         }
     }
 
-    /// Moves a run that isn't due yet, telling the server first so a failure
-    /// leaves the run where it was on both sides. Throws when the server can't
-    /// be told. If the watch then can't re-date it, the server already has the
-    /// new day.
-    func moveUpcomingWorkout(_ feedback: WorkoutFeedbackPayload, to newDate: Date) async throws {
+    /// The server hears first, so a failure leaves the run where it was on
+    /// both sides. If the watch then can't re-date it, the server already has
+    /// the new day.
+    private func moveUpcomingWorkout(_ feedback: WorkoutFeedbackPayload, to newDate: Date) async throws {
         try await apiClient.submitFeedback(feedback)
         if !(await rescheduleWorkout(id: feedback.workoutId, to: newDate)) {
             AppLog.scheduling.warning("Moved workout \(feedback.workoutId, privacy: .public) on the server but couldn't re-date it on the watch")
@@ -900,32 +949,23 @@ class WorkoutScheduleManager {
     }
 
     /// Brings a run planned for a later day forward to today, in one step and
-    /// without a reason: doing a run early is no setback to explain. `others`
-    /// are today's runs to skip to make room; the ones the server couldn't be
-    /// told about are returned, and stay on. Throws when the server can't be
-    /// told about the move itself, and then nothing has changed. The caller
-    /// runs `refreshAfterPlanChange()` afterwards.
+    /// without asking why: doing a run early is no setback to explain. The
+    /// server takes a reason from a fixed list, and none of them is "I felt
+    /// like it sooner", so the note says what happened. Otherwise as
+    /// `moveUpcoming`.
     func bringForwardToToday(
         _ workout: MissedWorkoutInfo,
         skipping others: [MissedWorkoutInfo],
         modelContext: ModelContext
     ) async throws -> [MissedWorkoutInfo] {
-        let newDate = workout.time(on: Date())
-        // The server takes a reason from a fixed list, and none of them is
-        // "I felt like it sooner". The note says what happened.
-        let feedback = WorkoutFeedback(
-            workoutId: workout.id,
-            workoutName: workout.displayName,
-            scheduledDate: workout.scheduledDate,
+        try await moveUpcoming(
+            workout,
+            to: workout.time(on: Date()),
             reason: .other,
-            action: .move,
-            reasonNote: "Brought forward to do today",
-            newDate: newDate
+            note: "Brought forward to do today",
+            skipping: others,
+            modelContext: modelContext
         )
-        try await moveUpcomingWorkout(feedback.payload, to: newDate)
-        feedback.synced = true
-        modelContext.insert(feedback)
-        return await skipToMakeRoom(others, for: workout, modelContext: modelContext)
     }
 
     /// The sessions on `day` that are still to do, other than the one with
@@ -950,18 +990,10 @@ class WorkoutScheduleManager {
     ) async -> [MissedWorkoutInfo] {
         var stillOn: [MissedWorkoutInfo] = []
         for other in others {
-            let feedback = WorkoutFeedback(
-                workoutId: other.id,
-                workoutName: other.displayName,
-                scheduledDate: other.scheduledDate,
-                reason: .other,
-                action: .skip,
-                reasonNote: "Made room for \(moved.displayName)"
-            )
             do {
-                try await skipUpcomingWorkout(feedback.payload)
-                feedback.synced = true
-                modelContext.insert(feedback)
+                try await skipUpcoming(
+                    other, reason: .other, note: "Made room for \(moved.displayName)", modelContext: modelContext
+                )
             } catch {
                 AppLog.scheduling.error("Failed to skip workout \(other.id, privacy: .public) to make room: \(String(describing: error), privacy: .public)")
                 stillOn.append(other)

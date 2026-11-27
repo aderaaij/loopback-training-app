@@ -71,7 +71,8 @@ struct LoopbackApp: App {
         _workoutManager = State(initialValue: wm)
         _scheduleManager = State(initialValue: sm)
         _shoeStore = State(initialValue: ShoeStore(apiClient: client))
-        _setbackStore = State(initialValue: SetbackStore(apiClient: client))
+        let setbacks = SetbackStore(apiClient: client)
+        _setbackStore = State(initialValue: setbacks)
         _fuelStore = State(initialValue: FuelStore(apiClient: client))
         _notificationManager = State(initialValue: nm)
         _backgroundSyncManager = State(initialValue: BackgroundSyncManager(
@@ -87,6 +88,7 @@ struct LoopbackApp: App {
         dependencies.add(dependency: sm)
         dependencies.add(dependency: wm)
         dependencies.add(dependency: store)
+        dependencies.add(dependency: setbacks)
     }
 
     var body: some Scene {

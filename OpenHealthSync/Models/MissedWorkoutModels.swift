@@ -12,7 +12,7 @@ import SwiftData
 
 // MARK: - Enums
 
-enum MissedWorkoutReason: String, Codable, CaseIterable, Identifiable {
+nonisolated enum MissedWorkoutReason: String, Codable, CaseIterable, Identifiable, Sendable {
     case busy
     case tired
     case weather
@@ -44,6 +44,16 @@ enum MissedWorkoutReason: String, Codable, CaseIterable, Identifiable {
         case .injured: return .injury
         default: return nil
         }
+    }
+
+    /// The note that goes to the server with this reason. "Other" and the
+    /// setback reasons carry one; the rest explain themselves.
+    func note(from text: String) -> String? {
+        guard self == .other || setbackKind != nil else { return nil }
+        // "Other" has always sent its note, empty or not.
+        if self == .other { return text }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     var emoji: String {
@@ -172,6 +182,21 @@ struct MissedWorkoutInfo: Identifiable {
             return false
         }
         return scheduledDate >= tomorrow
+    }
+
+    /// The days a run can be moved to: the next 14, today included.
+    static func movableDays(from now: Date = Date()) -> [Date] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        return (0..<14).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
+    }
+
+    /// Whether `day` is one of those and not the day the run already sits
+    /// on, where moving it would change nothing.
+    func canMove(to day: Date, now: Date = Date()) -> Bool {
+        let calendar = Calendar.current
+        return !calendar.isDate(day, inSameDayAs: scheduledDate)
+            && Self.movableDays(from: now).contains { calendar.isDate($0, inSameDayAs: day) }
     }
 
     /// The run's own time of day on `day`. A bare day would be local
