@@ -32,10 +32,8 @@ struct RescheduleDatePicker: View {
         _selectedDate = State(initialValue: Calendar.current.date(byAdding: .day, value: 1, to: from) ?? from)
     }
 
-    /// Dates for the next 14 days starting from today.
     private var availableDates: [Date] {
-        let today = calendar.startOfDay(for: Date())
-        return (0..<14).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
+        MissedWorkoutInfo.movableDays()
     }
 
     /// The day the run already sits on. Only reachable for a run that isn't

@@ -30,6 +30,9 @@ nonisolated enum LoopbackIntentError: Error, CustomLocalizedStringResourceConver
     case runNotFound
     /// The named run is already due today or earlier.
     case notLater(String)
+    /// The day asked for is outside the two weeks a run can move within, or
+    /// is the day the run already sits on.
+    case dayNotAvailable(String)
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -45,6 +48,8 @@ nonisolated enum LoopbackIntentError: Error, CustomLocalizedStringResourceConver
             "That run is no longer planned."
         case .notLater(let name):
             "\(name) is already planned for today."
+        case .dayNotAvailable(let name):
+            "\(name) can move to any other day in the next two weeks."
         }
     }
 }
@@ -88,6 +93,17 @@ extension WorkoutScheduleManager {
     }
 }
 
+extension WorkoutScheduleManager {
+    /// What every change of plans made by an action ends with: the check-in
+    /// is saved, and the coach's view of the watch and the plan card's counts
+    /// are brought up to date. Worth waiting a little for, since the process
+    /// may be put to sleep once the action returns.
+    func settleChangeFromAction(saving context: ModelContext) async {
+        try? context.save()
+        _ = try? await withTimeLimit(8) { await self.refreshAfterPlanChange() }
+    }
+}
+
 /// Whether the phone may read the watch's schedule. Asked here, off any
 /// actor, because the state itself isn't Sendable and only the answer needs
 /// to travel.
@@ -101,6 +117,34 @@ extension MissedWorkoutInfo {
     init?(_ scheduled: ScheduledWorkoutPlan) {
         guard let date = Calendar.current.date(from: scheduled.date) else { return nil }
         self.init(id: scheduled.plan.id, displayName: scheduled.plan.displayTitle, scheduledDate: date)
+    }
+}
+
+// MARK: - Moving onto a day that has a run
+
+extension AppIntent {
+    /// A run is moving onto `day`, which may already have one: skip that to
+    /// make room, or keep both, as the app asks. Returns the runs to skip,
+    /// or nil when the athlete called the move off.
+    @MainActor
+    func runsToSkip(
+        on day: Date,
+        for workout: MissedWorkoutInfo,
+        in scheduleManager: WorkoutScheduleManager
+    ) async throws -> [MissedWorkoutInfo]? {
+        let inTheWay = scheduleManager.openSessions(on: day, otherThan: workout.id)
+        guard !inTheWay.isEmpty else { return [] }
+
+        let names = inTheWay.map(\.displayName).joined(separator: ", ")
+        let skip = IntentChoiceOption(title: "Move & skip \(names)")
+        let keep = IntentChoiceOption(title: "Keep both")
+        let choice = try await requestChoice(
+            between: [skip, keep, .cancel],
+            dialog: "You already have \(names) \(IntentPhrasing.day(day))."
+        )
+        if choice == skip { return inTheWay }
+        if choice == keep { return [] }
+        return nil
     }
 }
 
@@ -139,6 +183,19 @@ nonisolated enum IntentPhrasing {
             return "on \(date.formatted(.dateTime.weekday(.wide)))\(at)"
         }
         return "on \(date.formatted(.dateTime.weekday(.wide).day().month(.wide)))\(at)"
+    }
+
+    /// "today", "tomorrow", "on Sunday", "on Sunday 13 December": the day
+    /// alone, whatever the time.
+    static func day(_ date: Date, now: Date = Date()) -> String {
+        when(Calendar.current.startOfDay(for: date), now: now)
+    }
+
+    /// "today", "tomorrow", "Sunday", "Sunday 13 December": the day as a
+    /// name, for "from Sunday to today".
+    static func dayName(_ date: Date, now: Date = Date()) -> String {
+        let phrase = day(date, now: now)
+        return phrase.hasPrefix("on ") ? String(phrase.dropFirst(3)) : phrase
     }
 
     /// "today", "yesterday", "on Thursday", "on Thursday 12 November": a day

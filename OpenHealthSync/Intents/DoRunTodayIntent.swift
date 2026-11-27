@@ -49,28 +49,13 @@ struct DoRunTodayIntent: AppIntent {
             }
             // Nobody named it, so say which one before it moves.
             try await requestConfirmation(
-                dialog: "Bring \(next.displayName) forward from \(Self.day(next.scheduledDate)) to today?"
+                dialog: "Bring \(next.displayName) forward from \(IntentPhrasing.dayName(next.scheduledDate)) to today?"
             )
             workout = next
         }
 
-        // Today may already have a run: skip it to make room, or keep both,
-        // as the app asks.
-        var skipping: [MissedWorkoutInfo] = []
-        let inTheWay = scheduleManager.openSessions(on: Date(), otherThan: workout.id)
-        if !inTheWay.isEmpty {
-            let names = inTheWay.map(\.displayName).joined(separator: ", ")
-            let skip = IntentChoiceOption(title: "Move & skip \(names)")
-            let keep = IntentChoiceOption(title: "Keep both")
-            let choice = try await requestChoice(
-                between: [skip, keep, .cancel],
-                dialog: "You already have \(names) today."
-            )
-            if choice == skip {
-                skipping = inTheWay
-            } else if choice != keep {
-                return .result(dialog: "Left \(workout.displayName) where it was.")
-            }
+        guard let skipping = try await runsToSkip(on: Date(), for: workout, in: scheduleManager) else {
+            return .result(dialog: "Left \(workout.displayName) where it was.")
         }
 
         let context = try feedbackContext()
@@ -82,20 +67,11 @@ struct DoRunTodayIntent: AppIntent {
         } catch {
             throw LoopbackIntentError.serverUnreachable
         }
-        try? context.save()
-        // The coach's view of the watch and the plan card's counts. Worth
-        // waiting a little for, since the process may sleep once this ends.
-        _ = try? await withTimeLimit(8) { await scheduleManager.refreshAfterPlanChange() }
+        await scheduleManager.settleChangeFromAction(saving: context)
 
         guard stillOn.isEmpty else {
             return .result(dialog: "\(MissedWorkoutFeedbackSheet.partialMoveMessage(moved: workout, stillOn: stillOn))")
         }
         return .result(dialog: "\(workout.displayName) is on for today.")
-    }
-
-    /// "tomorrow", "Sunday", "Sunday 13 December".
-    private static func day(_ date: Date) -> String {
-        let phrase = IntentPhrasing.when(Calendar.current.startOfDay(for: date))
-        return phrase.hasPrefix("on ") ? String(phrase.dropFirst(3)) : phrase
     }
 }
