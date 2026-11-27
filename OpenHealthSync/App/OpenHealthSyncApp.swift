@@ -5,6 +5,7 @@
 //  Created by Arden de Raaij on 13/03/2026.
 //
 
+import AppIntents
 import SwiftUI
 import SwiftData
 import WorkoutKit
@@ -77,7 +78,15 @@ struct LoopbackApp: App {
             workoutManager: wm,
             healthMetricsSyncer: syncer
         ))
-        _session = State(initialValue: SessionStore(apiClient: client, workoutManager: wm))
+        let store = SessionStore(apiClient: client, workoutManager: wm)
+        _session = State(initialValue: store)
+
+        // Siri and Shortcuts actions (Intents/) run outside any view, so the
+        // environment can't hand them these: they ask for them by type.
+        let dependencies = AppDependencyManager.shared
+        dependencies.add(dependency: sm)
+        dependencies.add(dependency: wm)
+        dependencies.add(dependency: store)
     }
 
     var body: some Scene {

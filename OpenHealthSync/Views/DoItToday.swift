@@ -106,23 +106,14 @@ private struct DoItTodayModifier: ViewModifier {
     /// server knows, the restore pass would put the run back on its old day.
     private func move(skipping others: [MissedWorkoutInfo]) {
         guard let workout = pending else { return }
-        let newDate = workout.time(on: Date())
-        // The server takes a reason from a fixed list, and none of them is
-        // "I felt like it sooner". The note says what happened.
-        let feedback = WorkoutFeedback(
-            workoutId: workout.id,
-            workoutName: workout.displayName,
-            scheduledDate: workout.scheduledDate,
-            reason: .other,
-            action: .move,
-            reasonNote: "Brought forward to do today",
-            newDate: newDate
-        )
         isSaving = true
         Task {
             defer { isSaving = false }
+            let stillOn: [MissedWorkoutInfo]
             do {
-                try await scheduleManager.moveUpcomingWorkout(feedback.payload, to: newDate)
+                stillOn = try await scheduleManager.bringForwardToToday(
+                    workout, skipping: others, modelContext: modelContext
+                )
             } catch {
                 AppLog.scheduling.error("Failed to bring workout \(workout.id, privacy: .public) forward: \(String(describing: error), privacy: .public)")
                 notice = Notice(
@@ -132,10 +123,6 @@ private struct DoItTodayModifier: ViewModifier {
                 )
                 return
             }
-            feedback.synced = true
-            modelContext.insert(feedback)
-
-            let stillOn = await scheduleManager.skipToMakeRoom(others, for: workout, modelContext: modelContext)
             Task { await scheduleManager.refreshAfterPlanChange() }
             if stillOn.isEmpty {
                 onMoved()

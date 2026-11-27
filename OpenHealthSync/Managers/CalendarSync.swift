@@ -108,13 +108,7 @@ extension CalendarSyncItem {
     /// Total time of a custom workout, rounded up to five minutes. Nil when
     /// any step has a goal other than time, since the total is then unknown.
     private static func estimatedLength(of workout: WorkoutPlan.Workout) -> TimeInterval? {
-        guard case .custom(let custom) = workout else { return nil }
-        var goals: [(WorkoutGoal, Int)] = []
-        if let warmup = custom.warmup { goals.append((warmup.goal, 1)) }
-        for block in custom.blocks {
-            for step in block.steps { goals.append((step.step.goal, block.iterations)) }
-        }
-        if let cooldown = custom.cooldown { goals.append((cooldown.goal, 1)) }
+        guard let goals = workout.stepGoals else { return nil }
 
         var total: TimeInterval = 0
         for (goal, times) in goals {
@@ -123,6 +117,33 @@ extension CalendarSyncItem {
         }
         guard total > 0 else { return nil }
         return (total / 300).rounded(.up) * 300
+    }
+}
+
+extension WorkoutPlan.Workout {
+    /// Every step's goal with how many times it is run, warm-up and cool-down
+    /// included. Nil for anything but a custom workout.
+    nonisolated var stepGoals: [(goal: WorkoutGoal, times: Int)]? {
+        guard case .custom(let custom) = self else { return nil }
+        var goals: [(goal: WorkoutGoal, times: Int)] = []
+        if let warmup = custom.warmup { goals.append((warmup.goal, 1)) }
+        for block in custom.blocks {
+            for step in block.steps { goals.append((step.step.goal, block.iterations)) }
+        }
+        if let cooldown = custom.cooldown { goals.append((cooldown.goal, 1)) }
+        return goals
+    }
+
+    /// The whole workout's distance in meters. Nil when any step has a goal
+    /// other than distance, since the total is then unknown.
+    nonisolated var totalDistance: Double? {
+        guard let goals = stepGoals else { return nil }
+        var total = 0.0
+        for (goal, times) in goals {
+            guard case .distance(let value, let unit) = goal else { return nil }
+            total += Measurement(value: value, unit: unit).converted(to: .meters).value * Double(times)
+        }
+        return total > 0 ? total : nil
     }
 }
 

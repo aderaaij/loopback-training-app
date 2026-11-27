@@ -49,17 +49,7 @@ struct TrainingTabView: View {
     }
 
     private var upcomingWorkouts: [ScheduledWorkoutPlan] {
-        scheduleManager.scheduledWorkouts
-            .filter { workout in
-                guard !workout.complete else { return false }
-                let scheduledDate = Calendar.current.date(from: workout.date) ?? .distantFuture
-                return scheduledDate >= startOfToday
-            }
-            .sorted {
-                let date0 = Calendar.current.date(from: $0.date) ?? .distantFuture
-                let date1 = Calendar.current.date(from: $1.date) ?? .distantFuture
-                return date0 < date1
-            }
+        scheduleManager.upcomingWorkouts
     }
 
     private var missedWorkoutsInList: [ScheduledWorkoutPlan] {

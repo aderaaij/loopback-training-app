@@ -56,6 +56,14 @@ Detects past-due incomplete workouts and collects structured feedback:
 - Action selection (reschedule, adjust plan, skip)
 - Feedback synced to Training API for LLM pattern analysis
 
+### Siri & Shortcuts
+
+Three actions, available by voice, in Spotlight and in the Shortcuts app:
+
+- "What's my next run in Loopback": the next planned run and when, answered from the phone's copy of the watch schedule, so it works offline
+- "How was my last run in Loopback": distance, time and pace of the latest run in Health
+- "Do my next run today in Loopback": brings a later run forward to today, after confirming which one
+
 ## Requirements
 
 - iOS 26+

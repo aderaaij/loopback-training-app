@@ -27,6 +27,12 @@ enum DisplayUnits: String, CaseIterable, Identifiable, Sendable {
         Locale.current.measurementSystem == .metric ? .metric : .imperial
     }
 
+    /// The athlete's choice, or the device's while they haven't made one: for
+    /// code outside a view, where `@AppStorage` isn't to be had.
+    static var current: DisplayUnits {
+        UserDefaults.standard.string(forKey: storageKey).flatMap(DisplayUnits.init(rawValue:)) ?? deviceDefault
+    }
+
     var id: String { rawValue }
 
     var label: String {
