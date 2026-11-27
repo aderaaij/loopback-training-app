@@ -152,6 +152,43 @@ class WorkoutManager {
         healthStore.execute(query)
     }
 
+    // MARK: - Latest Run
+
+    /// The most recent run in Health, whatever the history window: for an
+    /// answer given outside the app's screens, where no list has been loaded.
+    /// Nil when there is none; throws when Health can't be read, as on a
+    /// locked phone.
+    func latestRun() async throws -> WorkoutSummary? {
+        try await withCheckedThrowingContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            // A few, not one: the same run can be in Health twice, from two
+            // sources, and the list shows only the one deduplication keeps.
+            let query = HKSampleQuery(
+                sampleType: HKWorkoutType.workoutType(),
+                predicate: HKQuery.predicateForWorkouts(with: .running),
+                limit: 5,
+                sortDescriptors: [sort]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let latest = Self.deduplicateWorkouts(samples as? [HKWorkout] ?? []).first
+                continuation.resume(returning: latest.map { workout in
+                    WorkoutSummary(
+                        id: workout.uuid,
+                        activityType: Self.activityTypeName(workout.workoutActivityType),
+                        activityName: Self.activityDisplayName(workout.workoutActivityType),
+                        startDate: workout.startDate,
+                        duration: workout.duration,
+                        distance: workout.totalDistance?.doubleValue(for: .meter())
+                    )
+                })
+            }
+            healthStore.execute(query)
+        }
+    }
+
     // MARK: - Extract & Send (Manual)
 
     func extractAndSend(workoutID: UUID) async {

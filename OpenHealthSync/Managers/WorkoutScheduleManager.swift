@@ -167,6 +167,18 @@ class WorkoutScheduleManager {
         await syncCalendar()
     }
 
+    /// The sessions still to do from today on, soonest first.
+    var upcomingWorkouts: [ScheduledWorkoutPlan] {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        func date(_ scheduled: ScheduledWorkoutPlan) -> Date {
+            calendar.date(from: scheduled.date) ?? .distantFuture
+        }
+        return scheduledWorkouts
+            .filter { !$0.complete && date($0) >= startOfToday }
+            .sorted { date($0) < date($1) }
+    }
+
     // MARK: - iOS Calendar
 
     /// Whether each half of the schedule has been read this launch. Until it
@@ -885,6 +897,35 @@ class WorkoutScheduleManager {
         if !(await rescheduleWorkout(id: feedback.workoutId, to: newDate)) {
             AppLog.scheduling.warning("Moved workout \(feedback.workoutId, privacy: .public) on the server but couldn't re-date it on the watch")
         }
+    }
+
+    /// Brings a run planned for a later day forward to today, in one step and
+    /// without a reason: doing a run early is no setback to explain. `others`
+    /// are today's runs to skip to make room; the ones the server couldn't be
+    /// told about are returned, and stay on. Throws when the server can't be
+    /// told about the move itself, and then nothing has changed. The caller
+    /// runs `refreshAfterPlanChange()` afterwards.
+    func bringForwardToToday(
+        _ workout: MissedWorkoutInfo,
+        skipping others: [MissedWorkoutInfo],
+        modelContext: ModelContext
+    ) async throws -> [MissedWorkoutInfo] {
+        let newDate = workout.time(on: Date())
+        // The server takes a reason from a fixed list, and none of them is
+        // "I felt like it sooner". The note says what happened.
+        let feedback = WorkoutFeedback(
+            workoutId: workout.id,
+            workoutName: workout.displayName,
+            scheduledDate: workout.scheduledDate,
+            reason: .other,
+            action: .move,
+            reasonNote: "Brought forward to do today",
+            newDate: newDate
+        )
+        try await moveUpcomingWorkout(feedback.payload, to: newDate)
+        feedback.synced = true
+        modelContext.insert(feedback)
+        return await skipToMakeRoom(others, for: workout, modelContext: modelContext)
     }
 
     /// The sessions on `day` that are still to do, other than the one with
